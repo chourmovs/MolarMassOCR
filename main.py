@@ -7,6 +7,21 @@ import numpy as np
 from DECIMER import predict_SMILES
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors, Draw
+import sys, os
+
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+# Redéfinir le cache DECIMER
+local_cache = resource_path("models/decimer")
+os.environ["DECIMER_CACHE"] = local_cache
+
+from DECIMER import predict_SMILES
+
 
 def preprocess_image(path, scale=1.0, blur=3, method='adaptive', blocksize=21, C=4, suffix=""):
     img = cv2.imread(path)
