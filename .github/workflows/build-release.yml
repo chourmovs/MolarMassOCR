@@ -14,24 +14,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download and extract WinPython Zero
+      - name: Download and extract WinPython Minimal
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://github.com/winpython/winpython/releases/download/5.11.20240602/WinpythonZero-64bit-3.11.9.0.exe" -OutFile "WinpythonZero.exe"
-          7z x WinpythonZero.exe -owp
+          Invoke-WebRequest -Uri "https://github.com/winpython/winpython/releases/download/16.6.20250620final/Winpython64-3.12.10.1dot.exe" -OutFile "WinpythonMinimal.exe"
+          7z x WinpythonMinimal.exe -owp
 
       - name: Find WinPython root
         id: find_root
         shell: pwsh
         run: |
-          $root = Get-ChildItem -Directory wp | Where-Object { $_.Name -like 'WPy64-311*' } | Select-Object -First 1
+          $root = Get-ChildItem -Directory wp | Where-Object { $_.Name -like 'WPy64-312*' } | Select-Object -First 1
           echo "rootdir=$($root.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Install dependencies in WinPython
         shell: pwsh
         run: |
-          & $env:rootdir\python-3.11.9.amd64\python.exe -m pip install --upgrade pip
-          & $env:rootdir\python-3.11.9.amd64\python.exe -m pip install tensorflow==2.15.0 decimer rdkit-pypi opencv-python pillow
+          & $env:rootdir\python-3.12.10.amd64\python.exe -m pip install --upgrade pip
+          & $env:rootdir\python-3.12.10.amd64\python.exe -m pip install tensorflow==2.15.0 decimer rdkit-pypi opencv-python pillow
+
 
       - name: Download DECIMER model in cache and copy to project
         shell: pwsh
