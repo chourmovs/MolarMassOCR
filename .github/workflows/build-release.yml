@@ -17,7 +17,7 @@ jobs:
       - name: Download and extract WinPython Minimal
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://github.com/winpython/winpython/releases/download/16.6.20250620final/Winpython64-3.12.10.1dot.exe" -OutFile "WinpythonMinimal.exe"
+          Invoke-WebRequest -Uri "https://github.com/winpython/winpython/releases/download/7.1.20240203final/Winpython64-3.11.8.0dot.exe" -OutFile "WinpythonMinimal.exe"
           7z x WinpythonMinimal.exe -owp
 
       - name: Find WinPython python.exe
