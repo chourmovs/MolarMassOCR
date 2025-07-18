@@ -1,4 +1,4 @@
-name: Build and Release Portable ZIP (WinPython, Cleaned, GUI, Offline)
+name: Build and Release Portable ZIP (WinPython Minimal, Cleaned, GUI, Offline)
 
 on:
   push:
@@ -20,24 +20,25 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/winpython/winpython/releases/download/16.6.20250620final/Winpython64-3.12.10.1dot.exe" -OutFile "WinpythonMinimal.exe"
           7z x WinpythonMinimal.exe -owp
 
-      - name: Find WinPython root
-        id: find_root
+      - name: Find WinPython python.exe
+        id: find_python
         shell: pwsh
         run: |
-          $root = Get-ChildItem -Directory wp | Where-Object { $_.Name -like 'WPy64-312*' } | Select-Object -First 1
-          echo "rootdir=$($root.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $pyexe = Get-ChildItem -Path wp -Recurse -Filter python.exe | Select-Object -First 1
+          echo "pythonexe=$($pyexe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $pydir = Split-Path $pyexe.FullName
+          echo "pydir=$pydir" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Install dependencies in WinPython
         shell: pwsh
         run: |
-          & $env:rootdir\python-3.12.10.amd64\python.exe -m pip install --upgrade pip
-          & $env:rootdir\python-3.12.10.amd64\python.exe -m pip install tensorflow==2.15.0 decimer rdkit-pypi opencv-python pillow
-
+          & "${{ env.pythonexe }}" -m pip install --upgrade pip
+          & "${{ env.pythonexe }}" -m pip install tensorflow==2.15.0 decimer rdkit-pypi opencv-python pillow
 
       - name: Download DECIMER model in cache and copy to project
         shell: pwsh
         run: |
-          & $env:rootdir\python-3.11.9.amd64\python.exe -c "
+          & "${{ env.pythonexe }}" -c "
           import os
           from DECIMER import predict_SMILES
           import shutil
@@ -82,19 +83,19 @@ jobs:
       - name: Clean WinPython distribution (keep only minimal)
         shell: pwsh
         run: |
-          # Nettoie tous les dossiers/fichiers inutiles pour la portabilité
-          Remove-Item -Recurse -Force $env:rootdir\*.txt -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force $env:rootdir\*.bat -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force $env:rootdir\*.exe -Exclude python-3.11.9.amd64.exe,python.exe
-          Remove-Item -Recurse -Force $env:rootdir\*.lnk -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force $env:rootdir\Settings -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force $env:rootdir\scripts -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force $env:rootdir\tmp -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force $env:rootdir\tools -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force $env:rootdir\doc -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force $env:rootdir\notebooks -ErrorAction SilentlyContinue
+          # Nettoie les fichiers/dossiers inutiles pour la portabilité
+          Remove-Item -Recurse -Force $env:pydir\*.txt -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:pydir\*.bat -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:pydir\*.exe -Exclude python.exe
+          Remove-Item -Recurse -Force $env:pydir\*.lnk -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:pydir\Settings -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:pydir\scripts -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:pydir\tmp -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:pydir\tools -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:pydir\doc -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:pydir\notebooks -ErrorAction SilentlyContinue
           # Nettoie pip, wheel, tests...
-          $sitepk = "$env:rootdir\python-3.11.9.amd64\Lib\site-packages"
+          $sitepk = "$env:pydir\Lib\site-packages"
           Remove-Item -Recurse -Force "$sitepk\pip*" -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force "$sitepk\setuptools*" -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force "$sitepk\wheel*" -ErrorAction SilentlyContinue
@@ -103,23 +104,23 @@ jobs:
       - name: Copy GUI script and models
         shell: pwsh
         run: |
-          Copy-Item main_gui.py $env:rootdir\
-          Copy-Item -Recurse models $env:rootdir\models
+          Copy-Item main_gui.py $env:pydir\
+          Copy-Item -Recurse models $env:pydir\models
 
       - name: Prepare run.bat
         shell: pwsh
         run: |
-          Set-Content "$env:rootdir\run.bat" "@echo off`ncd /d %%~dp0`npython-3.11.9.amd64\python.exe main_gui.py`npause"
+          Set-Content "$env:pydir\run.bat" "@echo off`ncd /d %%~dp0`npython.exe main_gui.py`npause"
 
       - name: Prepare README
         shell: pwsh
         run: |
-          Set-Content "$env:rootdir\README.txt" "# Lancement du GUI OCSR`n`nDouble-cliquez sur run.bat pour lancer le logiciel."
+          Set-Content "$env:pydir\README.txt" "# Lancement du GUI OCSR`n`nDouble-cliquez sur run.bat pour lancer le logiciel."
 
       - name: Zip final portable WinPython
         shell: pwsh
         run: |
-          7z a molar_mass_portable_winpython.zip "$env:rootdir\*"
+          7z a molar_mass_portable_winpython.zip "$env:pydir\*"
 
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
@@ -133,7 +134,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           body: |
-            Portable ZIP GUI WinPython Zero nettoyé (tkinter, Tensorflow, DECIMER, RDKit uniquement). Prêt à l'emploi : aucun téléchargement, ni installation nécessaire.
+            Portable ZIP GUI WinPython Minimal (tkinter, Tensorflow, DECIMER, RDKit uniquement). Prêt à l'emploi : aucun téléchargement, ni installation nécessaire.
           files: molar_mass_portable_winpython.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
