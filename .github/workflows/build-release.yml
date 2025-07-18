@@ -30,6 +30,10 @@ jobs:
           python -m pip install --target=python/Lib/site-packages -r requirement.txt
           python -m pip install --target=python/Lib/site-packages pywin32  # Pour compatibilité clipboard
 
+      - name: Install DECIMER for model download
+        run: |
+          python -m pip install decimer
+      
       - name: Download DECIMER model in cache and copy to project
         run: |
           python -c "
