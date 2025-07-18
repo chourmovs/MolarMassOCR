@@ -1,0 +1,58 @@
+name: Build and Release EXE
+
+on:
+  push:
+    tags:
+      - 'v*'   # Lance le build pour chaque tag v1.0, v2.2.1, etc.
+  workflow_dispatch:  # Permet de lancer manuellement depuis GitHub
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build exe with PyInstaller
+      run: |
+        pyinstaller --onefile main.py
+      # --onefile : tout dans un seul exe
+      # Tu peux ajouter --noconsole ou --add-data selon tes besoins
+
+    - name: Move EXE to artifact root
+      run: |
+        move dist\main.exe main.exe
+
+    - name: Upload exe artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ocsr-app-exe
+        path: main.exe
+
+    - name: Generate Release Notes
+      id: create_notes
+      run: echo "RELEASE_NOTES=Build from ${{ github.sha }}" >> $GITHUB_ENV
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        body: |
+          Un exécutable Windows non signé généré automatiquement.
+          ${{ env.RELEASE_NOTES }}
+        files: main.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
