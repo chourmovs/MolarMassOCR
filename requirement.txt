@@ -1,0 +1,5 @@
+decimer
+rdkit-pypi
+pillow
+opencv-python
+matplotlib
