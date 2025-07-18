@@ -87,9 +87,10 @@ jobs:
 
       - name: Prepare README
         run: |
-          echo # Lancement du GUI OCSR > README.txt
-          echo. >> README.txt
-          echo Double-cliquez sur run.bat pour lancer le logiciel. >> README.txt
+          Set-Content README.txt "# Lancement du GUI OCSR"
+          Add-Content README.txt ""
+          Add-Content README.txt "Double-cliquez sur run.bat pour lancer le logiciel."
+
 
       - name: Prepare final ZIP
         run: |
