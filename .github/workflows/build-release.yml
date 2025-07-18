@@ -1,4 +1,4 @@
-name: Build and Release EXE (Offline/Portable)
+name: Build and Release GUI EXE (Offline/Portable/Optimized)
 
 on:
   push:
@@ -24,6 +24,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirement.txt
           pip install pyinstaller
+
+      - name: Restore DECIMER model cache
+        id: decimer-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/decimer
+          key: decimer-model-v1
 
       - name: Download DECIMER model in cache and copy to project
         run: |
@@ -68,28 +75,33 @@ jobs:
           if not found:
               raise RuntimeError('Impossible de trouver un modèle DECIMER après téléchargement.')
           "
-          
-      - name: Build exe with PyInstaller (offline + modèles)
+
+      - name: Download UPX
         run: |
-                    pyinstaller --onefile main.py --add-data "models/decimer;models/decimer"
-          
+          curl -L -o upx.zip https://github.com/upx/upx/releases/download/v4.2.3/upx-4.2.3-win64.zip
+          tar -xf upx.zip
+
+      - name: Build exe with PyInstaller (offline + modèles + GUI + UPX)
+        run: |
+          pyinstaller --onefile --windowed main_gui.py --add-data "models/decimer;models/decimer" --upx-dir upx-4.2.3-win64
+
       - name: Move EXE to artifact root
         run: |
-                    move dist\main.exe main.exe
-          
+          move dist\main_gui.exe main_gui.exe
+
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
-                    name: ocsr-app-exe
-                    path: main.exe
-          
+          name: ocsr-app-exe
+          path: main_gui.exe
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-                    tag_name: ${{ github.ref_name }}
-                    name: Release ${{ github.ref_name }}
-                    body: |
-                      Version offline : l’exécutable contient tous les modèles et dépendances, aucune connexion internet nécessaire.
-                    files: main.exe
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body: |
+            Version offline GUI, compressée avec UPX. L’exécutable contient tous les modèles et dépendances, aucune connexion internet nécessaire.
+          files: main_gui.exe
         env:
-                    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
