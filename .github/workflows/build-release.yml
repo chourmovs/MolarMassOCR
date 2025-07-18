@@ -14,16 +14,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download WinPython Zero
+      - name: Download and extract WinPython Zero
         run: |
-          curl -L -o winpython.zip https://github.com/winpython/winpython/releases/download/5.11.20240602/WinpythonZero-64bit-3.11.9.0.exe
-          7z x winpython.zip -owp
+          curl -L -o WinpythonZero.exe https://github.com/winpython/winpython/releases/download/5.11.20240602/WinpythonZero-64bit-3.11.9.0.exe
+          7z x WinpythonZero.exe -owp
 
       - name: Find WinPython root
         id: find_root
+        shell: pwsh
         run: |
-          $root = Get-ChildItem -Directory wp | Where-Object { $_.Name -match 'WPy64-311' } | Select-Object -First 1
-          echo "rootdir=$($root.FullName)" >> $env:GITHUB_ENV
+          $root = Get-ChildItem -Directory wp | Where-Object { $_.Name -like 'WPy64-311*' } | Select-Object -First 1
+          echo "rootdir=$($root.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Install dependencies in WinPython
         run: |
@@ -76,17 +77,17 @@ jobs:
 
       - name: Clean WinPython distribution (all but minimal)
         run: |
-          # Supprime tout ce qui n'est pas strictement nécessaire pour GUI+DECIMER+RDKit
-          Remove-Item -Recurse -Force $env:rootdir\*.txt
-          Remove-Item -Recurse -Force $env:rootdir\*.bat
+          # Nettoie tous les dossiers/fichiers inutiles pour la portabilité
+          Remove-Item -Recurse -Force $env:rootdir\*.txt -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:rootdir\*.bat -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force $env:rootdir\*.exe -Exclude python-3.11.9.amd64.exe,python.exe
-          Remove-Item -Recurse -Force $env:rootdir\*.lnk
-          Remove-Item -Recurse -Force $env:rootdir\Settings
-          Remove-Item -Recurse -Force $env:rootdir\scripts
-          Remove-Item -Recurse -Force $env:rootdir\tmp
-          Remove-Item -Recurse -Force $env:rootdir\tools
-          Remove-Item -Recurse -Force $env:rootdir\doc
-          Remove-Item -Recurse -Force $env:rootdir\notebooks
+          Remove-Item -Recurse -Force $env:rootdir\*.lnk -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:rootdir\Settings -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:rootdir\scripts -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:rootdir\tmp -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:rootdir\tools -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:rootdir\doc -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force $env:rootdir\notebooks -ErrorAction SilentlyContinue
           # Nettoie pip, wheel, tests...
           $sitepk = "$env:rootdir\python-3.11.9.amd64\Lib\site-packages"
           Remove-Item -Recurse -Force "$sitepk\pip*" -ErrorAction SilentlyContinue
