@@ -15,8 +15,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download and extract WinPython Zero
+        shell: pwsh
         run: |
-          curl -L -o WinpythonZero.exe https://github.com/winpython/winpython/releases/download/5.11.20240602/WinpythonZero-64bit-3.11.9.0.exe
+          Invoke-WebRequest -Uri "https://github.com/winpython/winpython/releases/download/5.11.20240602/WinpythonZero-64bit-3.11.9.0.exe" -OutFile "WinpythonZero.exe"
           7z x WinpythonZero.exe -owp
 
       - name: Find WinPython root
@@ -27,11 +28,13 @@ jobs:
           echo "rootdir=$($root.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Install dependencies in WinPython
+        shell: pwsh
         run: |
           & $env:rootdir\python-3.11.9.amd64\python.exe -m pip install --upgrade pip
           & $env:rootdir\python-3.11.9.amd64\python.exe -m pip install tensorflow==2.15.0 decimer rdkit-pypi opencv-python pillow
 
       - name: Download DECIMER model in cache and copy to project
+        shell: pwsh
         run: |
           & $env:rootdir\python-3.11.9.amd64\python.exe -c "
           import os
@@ -75,7 +78,8 @@ jobs:
               raise RuntimeError('Impossible de trouver un modèle DECIMER après téléchargement.')
           "
 
-      - name: Clean WinPython distribution (all but minimal)
+      - name: Clean WinPython distribution (keep only minimal)
+        shell: pwsh
         run: |
           # Nettoie tous les dossiers/fichiers inutiles pour la portabilité
           Remove-Item -Recurse -Force $env:rootdir\*.txt -ErrorAction SilentlyContinue
@@ -96,19 +100,23 @@ jobs:
           Get-ChildItem -Path $sitepk -Directory | Where-Object { $_.Name -match "test|tests|__pycache__|examples" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Copy GUI script and models
+        shell: pwsh
         run: |
           Copy-Item main_gui.py $env:rootdir\
           Copy-Item -Recurse models $env:rootdir\models
 
       - name: Prepare run.bat
+        shell: pwsh
         run: |
           Set-Content "$env:rootdir\run.bat" "@echo off`ncd /d %%~dp0`npython-3.11.9.amd64\python.exe main_gui.py`npause"
 
       - name: Prepare README
+        shell: pwsh
         run: |
           Set-Content "$env:rootdir\README.txt" "# Lancement du GUI OCSR`n`nDouble-cliquez sur run.bat pour lancer le logiciel."
 
       - name: Zip final portable WinPython
+        shell: pwsh
         run: |
           7z a molar_mass_portable_winpython.zip "$env:rootdir\*"
 
