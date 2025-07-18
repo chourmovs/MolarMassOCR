@@ -69,27 +69,27 @@ jobs:
               raise RuntimeError('Impossible de trouver un modèle DECIMER après téléchargement.')
           "
           
-                - name: Build exe with PyInstaller (offline + modèles)
-                  run: |
+      - name: Build exe with PyInstaller (offline + modèles)
+        run: |
                     pyinstaller --onefile main.py --add-data "models/decimer;models/decimer"
           
-                - name: Move EXE to artifact root
-                  run: |
+      - name: Move EXE to artifact root
+        run: |
                     move dist\main.exe main.exe
           
-                - name: Upload exe artifact
-                  uses: actions/upload-artifact@v4
-                  with:
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
                     name: ocsr-app-exe
                     path: main.exe
           
-                - name: Create GitHub Release
-                  uses: softprops/action-gh-release@v2
-                  with:
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
                     tag_name: ${{ github.ref_name }}
                     name: Release ${{ github.ref_name }}
                     body: |
                       Version offline : l’exécutable contient tous les modèles et dépendances, aucune connexion internet nécessaire.
                     files: main.exe
-                  env:
+        env:
                     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
