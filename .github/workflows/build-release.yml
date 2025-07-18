@@ -1,10 +1,10 @@
-name: Build and Release EXE
+name: Build and Release EXE (Offline)
 
 on:
   push:
     tags:
-      - 'v*'   # Lance le build pour chaque tag v1.0, v2.2.1, etc.
-  workflow_dispatch:  # Permet de lancer manuellement depuis GitHub
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -25,11 +25,10 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    - name: Build exe with PyInstaller
+    - name: Build exe with PyInstaller (offline + modèles)
       run: |
-        pyinstaller --onefile main.py
-      # --onefile : tout dans un seul exe
-      # Tu peux ajouter --noconsole ou --add-data selon tes besoins
+        pyinstaller --onefile main.py --add-data "models/decimer;models/decimer"
+        # Si tu as d'autres fichiers de données, ajoute des --add-data de la même façon
 
     - name: Move EXE to artifact root
       run: |
@@ -41,18 +40,13 @@ jobs:
         name: ocsr-app-exe
         path: main.exe
 
-    - name: Generate Release Notes
-      id: create_notes
-      run: echo "RELEASE_NOTES=Build from ${{ github.sha }}" >> $GITHUB_ENV
-
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
         name: Release ${{ github.ref_name }}
         body: |
-          Un exécutable Windows non signé généré automatiquement.
-          ${{ env.RELEASE_NOTES }}
+          Version offline : l’exécutable contient tous les modèles et dépendances, aucune connexion internet nécessaire.
         files: main.exe
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
