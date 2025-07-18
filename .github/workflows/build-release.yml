@@ -1,4 +1,4 @@
-name: Build and Release GUI EXE (Offline/Portable/Optimized)
+name: Build and Release Portable ZIP (GUI, offline, pre-installed)
 
 on:
   push:
@@ -14,23 +14,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Download Python embeddable
+        run: |
+          curl -L -o python-embed.zip https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip
+          mkdir python
+          tar -xf python-embed.zip -C python
 
-      - name: Install dependencies
+      - name: Prepare site-packages and Lib
+        run: |
+          mkdir -p python/Lib/site-packages
+
+      - name: Install dependencies in site-packages
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirement.txt
-          pip install pyinstaller
-
-      - name: Restore DECIMER model cache
-        id: decimer-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/decimer
-          key: decimer-model-v1
+          python -m pip install --target=python/Lib/site-packages -r requirement.txt
+          python -m pip install --target=python/Lib/site-packages pywin32  # Pour compatibilité clipboard
 
       - name: Download DECIMER model in cache and copy to project
         run: |
@@ -76,24 +74,28 @@ jobs:
               raise RuntimeError('Impossible de trouver un modèle DECIMER après téléchargement.')
           "
 
-      - name: Download UPX
+      - name: Prepare run.bat
         run: |
-          curl -L -o upx.zip https://github.com/upx/upx/releases/download/v4.2.3/upx-4.2.3-win64.zip
-          tar -xf upx.zip
+          echo @echo off > run.bat
+          echo cd /d %%~dp0 >> run.bat
+          echo python\python.exe main_gui.py >> run.bat
+          echo pause >> run.bat
 
-      - name: Build exe with PyInstaller (offline + modèles + GUI + UPX)
+      - name: Prepare README
         run: |
-          pyinstaller --onefile --windowed main_gui.py --add-data "models/decimer;models/decimer" --upx-dir upx-4.2.3-win64
+          echo # Lancement du GUI OCSR > README.txt
+          echo. >> README.txt
+          echo Double-cliquez sur run.bat pour lancer le logiciel. >> README.txt
 
-      - name: Move EXE to artifact root
+      - name: Prepare final ZIP
         run: |
-          move dist\main_gui.exe main_gui.exe
+          7z a molar_mass_gui_portable.zip python models main_gui.py run.bat requirements.txt README.txt
 
-      - name: Upload exe artifact
+      - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ocsr-app-exe
-          path: main_gui.exe
+          name: molar_mass_gui_portable
+          path: molar_mass_gui_portable.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -101,7 +103,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           body: |
-            Version offline GUI, compressée avec UPX. L’exécutable contient tous les modèles et dépendances, aucune connexion internet nécessaire.
-          files: main_gui.exe
+            Portable ZIP GUI, prêt à l'emploi. Aucun téléchargement, ni installation nécessaire.
+          files: molar_mass_gui_portable.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
