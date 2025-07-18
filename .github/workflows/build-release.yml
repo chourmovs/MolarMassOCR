@@ -94,7 +94,7 @@ jobs:
 
       - name: Prepare final ZIP
         run: |
-          7z a molar_mass_gui_portable.zip python models main_gui.py run.bat requirements.txt README.txt
+          7z a molar_mass_gui_portable.zip python models main_gui.py run.bat requirement.txt README.txt
 
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
