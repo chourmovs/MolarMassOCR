@@ -2,67 +2,273 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageGrab
 import os
-import io
+import glob
+import re
 
+# === Splashscreen immédiat, centré et large ===
+splash = tk.Tk()
+splash.overrideredirect(True)
+splash_width, splash_height = 640, 180
+
+# Calcul du centrage dynamique
+screen_width = splash.winfo_screenwidth()
+screen_height = splash.winfo_screenheight()
+x = (screen_width // 2) - (splash_width // 2)
+y = (screen_height // 2) - (splash_height // 2)
+splash.geometry(f"{splash_width}x{splash_height}+{x}+{y}")
+
+splash.config(bg="#334466")
+label = tk.Label(
+    splash,
+    text="Reconnaissance de structure moléculaire\nChargement du moteur IA...",
+    font=("Arial", 20, "bold"),
+    padx=30, pady=45,
+    bg="#334466", fg="white"
+)
+label.pack(expand=True, fill="both")
+splash.update()
+
+
+# Imports lents ici
 from DECIMER import predict_SMILES
 from rdkit import Chem
-from rdkit.Chem import Draw, rdMolDescriptors
+from rdkit.Chem import rdMolDescriptors, Draw, Descriptors
+import matplotlib
+matplotlib.use('Agg')
+import cv2
+import numpy as np
 
-def process_pil_image(pil_img):
-    # Sauvegarde temporaire pour décimer
-    temp_path = "temp_img.png"
-    pil_img.save(temp_path)
-    try:
-        smiles = predict_SMILES(temp_path)
-        mol = Chem.MolFromSmiles(smiles)
-        if not mol:
-            return None, "Structure non reconnue", None, None
-        formula = rdMolDescriptors.CalcMolFormula(mol)
-        mass = rdMolDescriptors.CalcExactMolWt(mol)
-        img = Draw.MolToImage(mol, size=(250, 250))
-        return smiles, formula, mass, img
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+splash.destroy()
+
+atomic_weights = {
+    "H": 1.008,
+    "C": 12.011,
+    "N": 14.007,
+    "O": 15.999,
+    "S": 32.06,
+    "P": 30.974,
+    "F": 18.998,
+    "Cl": 35.45,
+    "Br": 79.904,
+    "I": 126.90,
+}
+def masse_molaire_from_formula(formula):
+    pattern = r"([A-Z][a-z]?)(\d*)"
+    total = 0.0
+    for (elt, count) in re.findall(pattern, formula):
+        count = int(count) if count else 1
+        w = atomic_weights.get(elt)
+        if w is None:
+            continue
+        total += w * count
+    return total
+
+def is_chemically_plausible(mol):
+    if not mol:
+        return False
+    for atom in mol.GetAtoms():
+        s = atom.GetSymbol()
+        v = atom.GetExplicitValence()
+        if s == "C" and v > 4:
+            return False
+        if s == "O" and v > 2:
+            return False
+        if s == "N" and v > 3:
+            return False
+        if s == "H" and v > 1:
+            return False
+    return True
+
+def smiles_has_isotopes(smiles):
+    return bool(re.search(r'\[\d+[A-Z][a-z]?\]', smiles))
 
 class App:
     def __init__(self, root):
         self.root = root
         self.root.title("Reconnaissance de masse molaire OCSR")
-        self.root.geometry("650x400")
+        self.root.geometry("790x460")
+        self.root.resizable(False, False)
 
-        self.panel_img = tk.Label(root)
-        self.panel_img.pack(side="left", padx=10, pady=10)
+        left_frame = tk.Frame(root)
+        left_frame.pack(side="left", padx=10, pady=10)
 
-        frame = tk.Frame(root)
-        frame.pack(side="right", fill="both", expand=True, padx=10)
+        self.panel_img = tk.Label(left_frame)
+        self.panel_img.pack()
 
-        btn_open = tk.Button(frame, text="Ouvrir une image...", command=self.load_image)
-        btn_open.pack(pady=10)
+        right_frame = tk.Frame(root)
+        right_frame.pack(side="right", fill="both", expand=True, padx=10)
 
-        btn_paste = tk.Button(frame, text="Coller depuis le presse-papiers (Ctrl+V)", command=self.paste_image)
-        btn_paste.pack(pady=10)
+        btn_open = tk.Button(right_frame, text="Ouvrir une image...", font=("Arial", 12), command=self.load_image)
+        btn_open.pack(pady=6, fill='x')
 
-        self.text_result = tk.Text(frame, width=45, height=15)
-        self.text_result.pack(pady=10)
+        btn_paste = tk.Button(right_frame, text="Coller depuis le presse-papiers (Ctrl+V)", font=("Arial", 12), command=self.paste_image)
+        btn_paste.pack(pady=6, fill='x')
+
+        self.text_result = tk.Text(right_frame, width=56, height=17, font=("Consolas", 10))
+        self.text_result.pack(pady=8)
+        self.text_result.tag_configure("rouge", foreground="red")
+
+        nav_frame = tk.Frame(right_frame)
+        nav_frame.pack(pady=2)
+        self.btn_prev = tk.Button(nav_frame, text="◀ Précédent", command=self.prev_variant)
+        self.btn_prev.pack(side="left", padx=3)
+        self.lbl_num = tk.Label(nav_frame, text="Variante 1/1", width=15)
+        self.lbl_num.pack(side="left", padx=3)
+        self.btn_next = tk.Button(nav_frame, text="Suivant ▶", command=self.next_variant)
+        self.btn_next.pack(side="left", padx=3)
+
+        btn_copy_smiles = tk.Button(right_frame, text="Copier SMILES dans le presse-papiers", font=("Arial", 11), command=self.copy_smiles)
+        btn_copy_smiles.pack(pady=3, fill='x')
+
+        self.variants = []
+        self.current_variant = 0
+        self.smiles_last = None
+
+        self.update_nav_buttons()
 
         self.root.bind('<Control-v>', lambda event: self.paste_image())
 
-    def show_results(self, pil_img):
-        result = process_pil_image(pil_img)
-        smiles, formula, mass, mol_img = result
+    def process_pil_image(self, pil_img):
+        params = [
+            (1.0, 21, 4, 3, 'adaptive', "_A"),
+            (1.5, 21, 4, 3, 'adaptive', "_B"),
+            (2.0, 21, 4, 3, 'adaptive', "_C"),
+            (1.0, 31, 6, 5, 'adaptive', "_D"),
+            (1.5, 11, 2, 1, 'adaptive', "_E"),
+            (1.0, 0, 0, 0, 'otsu', "_F"),
+        ]
 
-        # Affiche la molécule
-        if mol_img:
-            self.mol_photo = ImageTk.PhotoImage(mol_img)
-            self.panel_img.configure(image=self.mol_photo)
-            self.panel_img.image = self.mol_photo
+        temp_base = "temp_img"
+        pil_img.save(f"{temp_base}.png")
+        results = []
+        try:
+            for scale, blocksize, C, blur, method, suffix in params:
+                img_cv = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+                img = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+                if scale != 1.0:
+                    img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+                if method == 'adaptive':
+                    proc = cv2.adaptiveThreshold(
+                        img, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+                        cv2.THRESH_BINARY, blocksize, C)
+                elif method == 'otsu':
+                    _, proc = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                else:
+                    proc = img
+                if blur > 0:
+                    proc = cv2.medianBlur(proc, blur)
+                preproc_path = f"{temp_base}_prep{suffix}.png"
+                cv2.imwrite(preproc_path, proc)
+
+                try:
+                    smiles = predict_SMILES(preproc_path)
+                except Exception as e:
+                    smiles = ""
+                mol = Chem.MolFromSmiles(smiles)
+                plausible = (
+                    mol and
+                    is_chemically_plausible(mol) and
+                    not smiles_has_isotopes(smiles)
+                )
+                if mol:
+                    formula = rdMolDescriptors.CalcMolFormula(mol)
+                    mass_exact = rdMolDescriptors.CalcExactMolWt(mol)
+                    mass_moyenne = Descriptors.MolWt(mol)
+                    img_rdkit = Draw.MolToImage(mol, size=(220, 220))
+                else:
+                    formula = "??"
+                    mass_exact = None
+                    mass_moyenne = None
+                    img_rdkit = None
+                results.append({
+                    "smiles": smiles,
+                    "formula": formula,
+                    "mass_exact": mass_exact,
+                    "mass_moyenne": mass_moyenne,
+                    "mol_img": img_rdkit,
+                    "plausible": plausible,
+                })
+        finally:
+            for f in glob.glob(f"{temp_base}*.png"):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+        return results
+
+    def show_results(self, pil_img):
+        results = self.process_pil_image(pil_img)
+        seen_masses = set()
+        eps = 0.01
+        variants = []
+        for idx, r in enumerate(results):
+            if r["mass_exact"] is None or r["smiles"] == "":
+                continue
+            already = any(abs(r["mass_exact"] - m) < eps for m in seen_masses)
+            if not already:
+                variants.append(r)
+                seen_masses.add(r["mass_exact"])
+
+        self.variants = variants
+        self.current_variant = 0
+        self.show_current_variant()
+
+    def show_current_variant(self):
+        if not self.variants:
+            self.panel_img.configure(image='')
+            self.text_result.delete(1.0, tk.END)
+            self.text_result.insert(tk.END, "Aucune structure reconnue.\n")
+            self.update_nav_buttons()
+            return
+        var = self.variants[self.current_variant]
+        if var["mol_img"]:
+            img_tk = ImageTk.PhotoImage(var["mol_img"])
+            self.panel_img.configure(image=img_tk)
+            self.panel_img.image = img_tk
         else:
             self.panel_img.configure(image='')
-
-        # Résumé texte
         self.text_result.delete(1.0, tk.END)
-        self.text_result.insert(tk.END, f"SMILES: {smiles}\n\nFormule: {formula}\n\nMasse molaire: {mass}\n")
+        msg, warning = self.format_variant(var, self.current_variant+1)
+        if warning:
+            self.text_result.insert(tk.END, msg, "rouge")
+        else:
+            self.text_result.insert(tk.END, msg)
+        self.smiles_last = var["smiles"]
+        self.update_nav_buttons()
+
+    def update_nav_buttons(self):
+        total = max(1, len(self.variants))
+        self.lbl_num.config(text=f"Variante {self.current_variant+1}/{total}")
+        if len(self.variants) > 1:
+            self.btn_prev.config(state="normal" if self.current_variant > 0 else "disabled")
+            self.btn_next.config(state="normal" if self.current_variant < len(self.variants)-1 else "disabled")
+        else:
+            self.btn_prev.config(state="disabled")
+            self.btn_next.config(state="disabled")
+
+    def prev_variant(self):
+        if self.variants and self.current_variant > 0:
+            self.current_variant -= 1
+            self.show_current_variant()
+
+    def next_variant(self):
+        if self.variants and self.current_variant < len(self.variants) - 1:
+            self.current_variant += 1
+            self.show_current_variant()
+
+    def format_variant(self, var, idx):
+        msg = f"--- Variante {idx} ---\n"
+        msg += f"SMILES: {var['smiles']}\nFormule: {var['formula']}\n"
+        msg += f"Masse exacte (monoisotopique via structure): {var['mass_exact']:.5f} g/mol\n"
+        msg += f"Masse molaire moyenne (via structure): {var['mass_moyenne']:.2f} g/mol\n"
+        mass_from_formula = masse_molaire_from_formula(var["formula"])
+        msg += f"Masse molaire moyenne (calculée via formule): {mass_from_formula:.2f} g/mol\n"
+        warning = False
+        if not var.get("plausible", True):
+            msg += "⚠️ Structure possiblement invalide (valence/isotope anormal)\n"
+            warning = True
+        msg += "\n"
+        return msg, warning
 
     def load_image(self):
         file_path = filedialog.askopenfilename(filetypes=[
@@ -86,6 +292,16 @@ class App:
                 messagebox.showwarning("Presse-papiers", "Aucune image trouvée dans le presse-papiers.")
         except Exception as e:
             messagebox.showerror("Erreur", f"Impossible de récupérer l'image du presse-papiers:\n{e}")
+
+    def copy_smiles(self):
+        if self.variants and 0 <= self.current_variant < len(self.variants):
+            smiles = self.variants[self.current_variant]["smiles"]
+            self.root.clipboard_clear()
+            self.root.clipboard_append(smiles)
+            self.root.update()
+            messagebox.showinfo("SMILES copié", "La chaîne SMILES a été copiée dans le presse-papiers.")
+        else:
+            messagebox.showwarning("SMILES", "Aucun SMILES à copier.")
 
 if __name__ == "__main__":
     root = tk.Tk()
