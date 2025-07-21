@@ -23,8 +23,8 @@ class ConsoleRedirector:
 # === Fixe le chemin des modèles AVANT import des modules IA ===
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
 os.environ["DECIMER_CACHE_DIR"] = os.path.join(MODEL_DIR, "decimer")
-scale_str = f"x{scale}plus"
-model_path = os.path.join(MODEL_DIR, f"RealESRGAN_{scale_str}.pth")
+#scale_str = f"x{scale}plus"
+#model_path = os.path.join(MODEL_DIR, f"RealESRGAN_{scale_str}.pth")
 
 
 # === Splashscreen immédiat, centré et large ===
@@ -79,17 +79,19 @@ def super_resolve_pil(pil_img, scale=2):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     try:
         model = RealESRGAN(device, scale=scale)
-        model_path = os.path.join(MODEL_DIR, f"RealESRGAN_x{scale}.pth")
+        scale_str = f"x{scale}plus"
+        model_path = os.path.join(MODEL_DIR, f"RealESRGAN_{scale_str}.pth")
         if not os.path.exists(model_path):
             print(f"Fichier modèle RealESRGAN manquant : {model_path}")
             return pil_img
         model.load_weights(model_path)
         sr_img = model.predict(pil_img)
-        print(f"Super-résolution x{scale} appliquée.")
+        print(f"Super-résolution {scale_str} appliquée.")
         return sr_img
     except Exception as e:
-        print("Erreur Real-ESRGAN:", e)
+        print("Erreur Real-ESRGAN :", e)
         return pil_img
+
 
 # ---- Utilitaires chimiques ----
 atomic_weights = {
@@ -227,11 +229,11 @@ class App:
         print("Prétraitement de l'image (super-résolution si dispo)...")
         pil_img = super_resolve_pil(pil_img, scale=2)
         params = [
-            (1.0, 21, 4, 3, 'adaptive', "_A"),
-            (1.5, 21, 4, 3, 'adaptive', "_B"),
-            (2.0, 21, 4, 3, 'adaptive', "_C"),
-            (1.0, 31, 6, 5, 'adaptive', "_D"),
-            (1.5, 11, 2, 1, 'adaptive', "_E"),
+           # (1.0, 21, 4, 3, 'adaptive', "_A"),
+            #(1.5, 21, 4, 3, 'adaptive', "_B"),
+            #(2.0, 21, 4, 3, 'adaptive', "_C"),
+            #(1.0, 31, 6, 5, 'adaptive', "_D"),
+            #(1.5, 11, 2, 1, 'adaptive', "_E"),
             (1.0, 0, 0, 0, 'otsu', "_F"),
         ]
 
