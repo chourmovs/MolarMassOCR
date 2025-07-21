@@ -1,9 +1,31 @@
+import os
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageGrab
-import os
 import glob
 import re
+
+# === Redirection de la console ===
+class ConsoleRedirector:
+    def __init__(self, text_widget):
+        self.text_widget = text_widget
+
+    def write(self, msg):
+        self.text_widget.configure(state='normal')
+        self.text_widget.insert('end', msg)
+        self.text_widget.see('end')
+        self.text_widget.configure(state='disabled')
+
+    def flush(self):
+        pass  # pour compatibilité
+
+# === Fixe le chemin des modèles AVANT import des modules IA ===
+MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
+os.environ["DECIMER_CACHE_DIR"] = os.path.join(MODEL_DIR, "decimer")
+scale_str = f"x{scale}plus"
+model_path = os.path.join(MODEL_DIR, f"RealESRGAN_{scale_str}.pth")
+
 
 # === Splashscreen immédiat, centré et large ===
 splash = tk.Tk()
@@ -25,7 +47,7 @@ label = tk.Label(
 label.pack(expand=True, fill="both")
 splash.update()
 
-# Imports lents ici
+# Imports lents ici (après DECIMER_CACHE_DIR)
 from DECIMER import predict_SMILES
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors, Draw, Descriptors
@@ -35,7 +57,7 @@ import cv2
 import numpy as np
 import requests
 
-# Super-résolution
+# Super-résolution (RealESRGAN doit être dans models/)
 try:
     from realesrgan import RealESRGAN
     import torch
@@ -47,24 +69,26 @@ splash.destroy()
 
 # ---- Nettoyage SMILES des isotopes ----
 def clean_smiles_isotopes(smiles):
-    """
-    Remplace tous les atomes isotopiques du SMILES ([2H], [3H], [13C], etc.) par la version standard ([H], [C], ...)
-    """
     return re.sub(r'\[(\d+)([A-Z][a-z]?)\]', r'\2', smiles)
 
-# ---- Super-résolution ----
+# ---- Super-résolution sans téléchargement, modèle local obligatoire ----
 def super_resolve_pil(pil_img, scale=2):
-    """Super-résolution PIL.Image -> PIL.Image (2x ou 4x) avec Real-ESRGAN si dispo, sinon image inchangée."""
     if not has_sr:
+        print("RealESRGAN non disponible.")
         return pil_img
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     try:
         model = RealESRGAN(device, scale=scale)
-        model.load_weights(f'RealESRGAN_x{scale}.pth', download=True)
+        model_path = os.path.join(MODEL_DIR, f"RealESRGAN_x{scale}.pth")
+        if not os.path.exists(model_path):
+            print(f"Fichier modèle RealESRGAN manquant : {model_path}")
+            return pil_img
+        model.load_weights(model_path)
         sr_img = model.predict(pil_img)
+        print(f"Super-résolution x{scale} appliquée.")
         return sr_img
     except Exception as e:
-        print("Erreur Real-ESRGAN :", e)
+        print("Erreur Real-ESRGAN:", e)
         return pil_img
 
 # ---- Utilitaires chimiques ----
@@ -148,7 +172,7 @@ class App:
     def __init__(self, root):
         self.root = root
         self.root.title("Reconnaissance de masse molaire OCSR")
-        self.root.geometry("790x460")
+        self.root.geometry("790x540")
         self.root.resizable(False, False)
 
         left_frame = tk.Frame(root)
@@ -166,9 +190,18 @@ class App:
         btn_paste = tk.Button(right_frame, text="Coller depuis le presse-papiers (Ctrl+V)", font=("Arial", 12), command=self.paste_image)
         btn_paste.pack(pady=6, fill='x')
 
-        self.text_result = tk.Text(right_frame, width=56, height=17, font=("Consolas", 10))
+        self.text_result = tk.Text(right_frame, width=56, height=12, font=("Consolas", 10))
         self.text_result.pack(pady=8)
         self.text_result.tag_configure("rouge", foreground="red")
+
+        # === Console live (stdout/stderr) ===
+        console_frame = tk.LabelFrame(right_frame, text="Console interne", padx=2, pady=2)
+        console_frame.pack(fill="both", expand=False, pady=(0,6))
+        self.text_console = tk.Text(console_frame, height=7, font=("Consolas", 9), state='disabled', bg="#21262c", fg="#e6e6e6")
+        self.text_console.pack(fill="both", expand=True)
+        sys.stdout = ConsoleRedirector(self.text_console)
+        sys.stderr = ConsoleRedirector(self.text_console)
+        print("Console interne activée. Tous les print() apparaîtront ici.")
 
         nav_frame = tk.Frame(right_frame)
         nav_frame.pack(pady=2)
@@ -191,7 +224,7 @@ class App:
         self.root.bind('<Control-v>', lambda event: self.paste_image())
 
     def process_pil_image(self, pil_img):
-        # Super-résolution en prétraitement !
+        print("Prétraitement de l'image (super-résolution si dispo)...")
         pil_img = super_resolve_pil(pil_img, scale=2)
         params = [
             (1.0, 21, 4, 3, 'adaptive', "_A"),
@@ -228,6 +261,7 @@ class App:
                     smiles = predict_SMILES(preproc_path)
                     smiles = clean_smiles_isotopes(smiles)
                 except Exception as e:
+                    print(f"Erreur DECIMER (variante {suffix}): {e}")
                     smiles = ""
                 mol = Chem.MolFromSmiles(smiles)
                 plausible = (
@@ -257,11 +291,13 @@ class App:
             for f in glob.glob(f"{temp_base}*.png"):
                 try:
                     os.remove(f)
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Erreur suppression temporaire {f}: {e}")
+        print(f"{len(results)} variantes analysées.")
         return results
 
     def show_results(self, pil_img):
+        print("Analyse de l'image en cours...")
         results = self.process_pil_image(pil_img)
         seen_masses = set()
         eps = 0.01
@@ -332,17 +368,25 @@ class App:
         # Recherche automatique du CAS et nom courant
         if "_cas" not in var:
             var["_cas"] = smiles_to_cas(var["smiles"])
+            if var["_cas"]:
+                print(f"CAS trouvé pour {var['smiles']}: {var['_cas']}")
+            else:
+                print(f"CAS non trouvé pour {var['smiles']}")
         cas_number = var["_cas"]
         msg += f"CAS #: {cas_number if cas_number else '(non trouvé)'}\n"
 
         if cas_number:
             if "_nom" not in var:
                 var["_nom"] = cas_to_name(cas_number)
+                if var["_nom"]:
+                    print(f"Nom trouvé pour CAS {cas_number}: {var['_nom']}")
+                else:
+                    print(f"Nom non trouvé pour CAS {cas_number}")
             nom_courant = var["_nom"]
         else:
             nom_courant = ""
         if nom_courant:
-            msg += f"Nom PubChem : {nom_courant}\n"
+            msg += f"Nom PubChem: {nom_courant}\n"
 
         warning = False
         if not var.get("plausible", True):
@@ -360,19 +404,24 @@ class App:
             return
         try:
             pil_img = Image.open(file_path).convert("RGB")
+            print(f"Image chargée : {file_path}")
             self.show_results(pil_img)
         except Exception as e:
             messagebox.showerror("Erreur", f"Impossible de lire l'image:\n{e}")
+            print(f"Erreur ouverture image : {e}")
 
     def paste_image(self):
         try:
             pil_img = ImageGrab.grabclipboard()
             if isinstance(pil_img, Image.Image):
+                print("Image collée depuis le presse-papiers.")
                 self.show_results(pil_img)
             else:
                 messagebox.showwarning("Presse-papiers", "Aucune image trouvée dans le presse-papiers.")
+                print("Presse-papiers: aucune image détectée.")
         except Exception as e:
             messagebox.showerror("Erreur", f"Impossible de récupérer l'image du presse-papiers:\n{e}")
+            print(f"Erreur collage image: {e}")
 
     def copy_smiles(self):
         if self.variants and 0 <= self.current_variant < len(self.variants):
@@ -381,10 +430,13 @@ class App:
             self.root.clipboard_append(smiles)
             self.root.update()
             messagebox.showinfo("SMILES copié", "La chaîne SMILES a été copiée dans le presse-papiers.")
+            print(f"SMILES copié: {smiles}")
         else:
             messagebox.showwarning("SMILES", "Aucun SMILES à copier.")
+            print("Aucun SMILES à copier.")
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = App(root)
     root.mainloop()
+
