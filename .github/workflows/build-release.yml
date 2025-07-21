@@ -101,6 +101,16 @@ jobs:
           Remove-Item -Recurse -Force "$sitepk\wheel*" -ErrorAction SilentlyContinue
           Get-ChildItem -Path $sitepk -Directory | Where-Object { $_.Name -match "test|tests|__pycache__|examples" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
+      - name: Download and extract pythonw.exe
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/indygreg/python-build-standalone/releases/download/20240407/cpython-3.11.8+20240407-x86_64-pc-windows-msvc-shared-install_only.tar.zst" -OutFile "python-standalone.tar.zst"
+          7z x python-standalone.tar.zst -opybuild
+          7z x pybuild\*.tar -opybuild2
+          $pyw = Get-ChildItem -Path pybuild2 -Recurse -Filter pythonw.exe | Select-Object -First 1
+          Copy-Item $pyw.FullName $env:pydir\
+
+      
       - name: Copy GUI script and models
         shell: pwsh
         run: |
