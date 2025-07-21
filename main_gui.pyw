@@ -8,7 +8,7 @@ import re
 # === Splashscreen immédiat, centré et large ===
 splash = tk.Tk()
 splash.overrideredirect(True)
-splash_width, splash_height = 480, 180
+splash_width, splash_height = 640, 180
 screen_width = splash.winfo_screenwidth()
 screen_height = splash.winfo_screenheight()
 x = (screen_width // 2) - (splash_width // 2)
