@@ -111,7 +111,7 @@ jobs:
       - name: Copy GUI script and models
         shell: pwsh
         run: |
-          Copy-Item main_gui.py $env:pydir\
+          Copy-Item main_gui.pyw $env:pydir\
           Copy-Item -Recurse models $env:pydir\models
 
       - name: Prepare run.bat
