@@ -33,7 +33,7 @@ jobs:
         shell: pwsh
         run: |
           & "${{ env.pythonexe }}" -m pip install --upgrade pip
-          & "${{ env.pythonexe }}" -m pip install tensorflow decimer rdkit-pypi opencv-python pillow matplotlib torch realesrgan
+          & "${{ env.pythonexe }}" -m pip install tensorflow decimer rdkit-pypi opencv-python pillow matplotlib torch realesrgan torchvision
 
       - name: Download DECIMER model in cache and copy to project
         shell: pwsh
