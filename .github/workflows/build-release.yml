@@ -33,7 +33,7 @@ jobs:
         shell: pwsh
         run: |
           & "${{ env.pythonexe }}" -m pip install --upgrade pip
-          & "${{ env.pythonexe }}" -m pip install tensorflow decimer rdkit-pypi opencv-python pillow matplotlib
+          & "${{ env.pythonexe }}" -m pip install tensorflow decimer rdkit-pypi opencv-python pillow matplotlib torch realesrgan
 
       - name: Download DECIMER model in cache and copy to project
         shell: pwsh
@@ -118,9 +118,9 @@ jobs:
         shell: pwsh
         run: |
           Set-Content "$env:pydir\run.bat" '@echo off
-                      cd /d %~dp0
-                      start /min "" pythonw.exe main_gui.pyw > debug.log 2>&1
-                      pause'
+          cd /d %~dp0
+          start /min "" pythonw.exe main_gui.pyw > debug.log 2>&1
+          pause'
 
       - name: Prepare README
         shell: pwsh
