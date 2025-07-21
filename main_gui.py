@@ -8,15 +8,12 @@ import re
 # === Splashscreen immédiat, centré et large ===
 splash = tk.Tk()
 splash.overrideredirect(True)
-splash_width, splash_height = 640, 180
-
-# Calcul du centrage dynamique
+splash_width, splash_height = 480, 180
 screen_width = splash.winfo_screenwidth()
 screen_height = splash.winfo_screenheight()
 x = (screen_width // 2) - (splash_width // 2)
 y = (screen_height // 2) - (splash_height // 2)
 splash.geometry(f"{splash_width}x{splash_height}+{x}+{y}")
-
 splash.config(bg="#334466")
 label = tk.Label(
     splash,
@@ -28,7 +25,6 @@ label = tk.Label(
 label.pack(expand=True, fill="both")
 splash.update()
 
-
 # Imports lents ici
 from DECIMER import predict_SMILES
 from rdkit import Chem
@@ -37,20 +33,45 @@ import matplotlib
 matplotlib.use('Agg')
 import cv2
 import numpy as np
+import requests
+
+# Super-résolution
+try:
+    from realesrgan import RealESRGAN
+    import torch
+    has_sr = True
+except ImportError:
+    has_sr = False
 
 splash.destroy()
 
+# ---- Nettoyage SMILES des isotopes ----
+def clean_smiles_isotopes(smiles):
+    """
+    Remplace tous les atomes isotopiques du SMILES ([2H], [3H], [13C], etc.) par la version standard ([H], [C], ...)
+    """
+    return re.sub(r'\[(\d+)([A-Z][a-z]?)\]', r'\2', smiles)
+
+# ---- Super-résolution ----
+def super_resolve_pil(pil_img, scale=2):
+    """Super-résolution PIL.Image -> PIL.Image (2x ou 4x) avec Real-ESRGAN si dispo, sinon image inchangée."""
+    if not has_sr:
+        return pil_img
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    try:
+        model = RealESRGAN(device, scale=scale)
+        model.load_weights(f'RealESRGAN_x{scale}.pth', download=True)
+        sr_img = model.predict(pil_img)
+        return sr_img
+    except Exception as e:
+        print("Erreur Real-ESRGAN :", e)
+        return pil_img
+
+# ---- Utilitaires chimiques ----
 atomic_weights = {
-    "H": 1.008,
-    "C": 12.011,
-    "N": 14.007,
-    "O": 15.999,
-    "S": 32.06,
-    "P": 30.974,
-    "F": 18.998,
-    "Cl": 35.45,
-    "Br": 79.904,
-    "I": 126.90,
+    "H": 1.008, "C": 12.011, "N": 14.007, "O": 15.999,
+    "S": 32.06, "P": 30.974, "F": 18.998, "Cl": 35.45,
+    "Br": 79.904, "I": 126.90,
 }
 def masse_molaire_from_formula(formula):
     pattern = r"([A-Z][a-z]?)(\d*)"
@@ -81,6 +102,47 @@ def is_chemically_plausible(mol):
 
 def smiles_has_isotopes(smiles):
     return bool(re.search(r'\[\d+[A-Z][a-z]?\]', smiles))
+
+# ---- Recherche CAS/nom via PubChem ----
+def smiles_to_cas(smiles):
+    try:
+        url_cid = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{smiles}/cids/TXT"
+        r = requests.get(url_cid, timeout=10)
+        if not r.ok or not r.text.strip().isdigit():
+            return None
+        cid = r.text.strip()
+
+        url_syn = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/xrefs/RegistryID/JSON"
+        r2 = requests.get(url_syn, timeout=10)
+        if not r2.ok:
+            return None
+
+        data = r2.json()
+        ids = data.get("InformationList", {}).get("Information", [{}])[0].get("RegistryID", [])
+        for regid in ids:
+            if re.match(r'^\d{2,7}-\d{2}-\d$', regid):
+                return regid
+        return None
+    except Exception:
+        return None
+
+def cas_to_name(cas):
+    try:
+        url_cid = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/xref/RegistryID/{cas}/cids/TXT"
+        r = requests.get(url_cid, timeout=10)
+        if not r.ok or not r.text.strip().isdigit():
+            return None
+        cid = r.text.strip()
+
+        url_name = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/IUPACName,Title/JSON"
+        r2 = requests.get(url_name, timeout=10)
+        if not r2.ok:
+            return None
+        data = r2.json()
+        props = data.get("PropertyTable", {}).get("Properties", [{}])[0]
+        return props.get("Title") or props.get("IUPACName")
+    except Exception:
+        return None
 
 class App:
     def __init__(self, root):
@@ -129,6 +191,8 @@ class App:
         self.root.bind('<Control-v>', lambda event: self.paste_image())
 
     def process_pil_image(self, pil_img):
+        # Super-résolution en prétraitement !
+        pil_img = super_resolve_pil(pil_img, scale=2)
         params = [
             (1.0, 21, 4, 3, 'adaptive', "_A"),
             (1.5, 21, 4, 3, 'adaptive', "_B"),
@@ -162,6 +226,7 @@ class App:
 
                 try:
                     smiles = predict_SMILES(preproc_path)
+                    smiles = clean_smiles_isotopes(smiles)
                 except Exception as e:
                     smiles = ""
                 mol = Chem.MolFromSmiles(smiles)
@@ -263,6 +328,22 @@ class App:
         msg += f"Masse molaire moyenne (via structure): {var['mass_moyenne']:.2f} g/mol\n"
         mass_from_formula = masse_molaire_from_formula(var["formula"])
         msg += f"Masse molaire moyenne (calculée via formule): {mass_from_formula:.2f} g/mol\n"
+
+        # Recherche automatique du CAS et nom courant
+        if "_cas" not in var:
+            var["_cas"] = smiles_to_cas(var["smiles"])
+        cas_number = var["_cas"]
+        msg += f"CAS #: {cas_number if cas_number else '(non trouvé)'}\n"
+
+        if cas_number:
+            if "_nom" not in var:
+                var["_nom"] = cas_to_name(cas_number)
+            nom_courant = var["_nom"]
+        else:
+            nom_courant = ""
+        if nom_courant:
+            msg += f"Nom PubChem : {nom_courant}\n"
+
         warning = False
         if not var.get("plausible", True):
             msg += "⚠️ Structure possiblement invalide (valence/isotope anormal)\n"
