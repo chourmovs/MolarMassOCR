@@ -101,14 +101,11 @@ jobs:
           Remove-Item -Recurse -Force "$sitepk\wheel*" -ErrorAction SilentlyContinue
           Get-ChildItem -Path $sitepk -Directory | Where-Object { $_.Name -match "test|tests|__pycache__|examples" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-      - name: Download and extract pythonw.exe
+      - name: Copy pythonw.exe from bin/
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -OutFile "python-standalone.zip"
-          7z x python-standalone.zip -opybuild
-          7z x pybuild\*.tar -opybuild2
-          $pyw = Get-ChildItem -Path pybuild2 -Recurse -Filter pythonw.exe | Select-Object -First 1
-          Copy-Item $pyw.FullName $env:pydir\
+          Copy-Item bin\pythonw.exe $env:pydir\
+
 
       
       - name: Copy GUI script and models
