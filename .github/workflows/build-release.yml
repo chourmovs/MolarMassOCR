@@ -106,7 +106,13 @@ jobs:
         run: |
           Copy-Item bin\pythonw.exe $env:pydir\
 
-
+      - name: Download RealESRGAN models
+        shell: pwsh
+        run: |
+          $models_dir = "models"
+          if (!(Test-Path $models_dir)) { New-Item -ItemType Directory -Path $models_dir | Out-Null }
+          Invoke-WebRequest -Uri "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth" -OutFile "$models_dir\RealESRGAN_x2plus.pth"
+          Invoke-WebRequest -Uri "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth" -OutFile "$models_dir\RealESRGAN_x4plus.pth"
       
       - name: Copy GUI script and models
         shell: pwsh
@@ -126,14 +132,6 @@ jobs:
         shell: pwsh
         run: |
           Set-Content "$env:pydir\README.txt" "# Lancement du GUI OCSR`n`nDouble-cliquez sur run.bat pour lancer le logiciel."
-
-      - name: Download RealESRGAN models
-        shell: pwsh
-        run: |
-          $models_dir = "models"
-          if (!(Test-Path $models_dir)) { New-Item -ItemType Directory -Path $models_dir | Out-Null }
-          Invoke-WebRequest -Uri "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth" -OutFile "$models_dir\RealESRGAN_x2plus.pth"
-          Invoke-WebRequest -Uri "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth" -OutFile "$models_dir\RealESRGAN_x4plus.pth"
 
       
       - name: Zip final portable WinPython
