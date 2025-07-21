@@ -139,7 +139,7 @@ jobs:
       - name: Zip final portable WinPython
         shell: pwsh
         run: |
-          7z a molar_mass_portable_winpython.zip "$env:pydir\*"
+          7z a -mx=1 molar_mass_portable_winpython.zip "$env:pydir\*"
 
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
