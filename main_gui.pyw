@@ -5,6 +5,10 @@ from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageGrab
 import glob
 import re
+import cv2
+from PIL import Image
+import numpy as np
+
 
 # === Redirection de la console ===
 class ConsoleRedirector:
@@ -72,25 +76,46 @@ def clean_smiles_isotopes(smiles):
     return re.sub(r'\[(\d+)([A-Z][a-z]?)\]', r'\2', smiles)
 
 # ---- Super-résolution sans téléchargement, modèle local obligatoire ----
-def super_resolve_pil(pil_img, scale=2):
-    if not has_sr:
-        print("RealESRGAN non disponible.")
-        return pil_img
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    try:
-        model = RealESRGAN(device, scale=scale)
-        scale_str = f"x{scale}plus"
-        model_path = os.path.join(MODEL_DIR, f"RealESRGAN_{scale_str}.pth")
-        if not os.path.exists(model_path):
-            print(f"Fichier modèle RealESRGAN manquant : {model_path}")
-            return pil_img
-        model.load_weights(model_path)
-        sr_img = model.predict(pil_img)
-        print(f"Super-résolution {scale_str} appliquée.")
-        return sr_img
-    except Exception as e:
-        print("Erreur Real-ESRGAN :", e)
-        return pil_img
+# def super_resolve_pil(pil_img, scale=2):
+    # if not has_sr:
+        # print("RealESRGAN non disponible.")
+        # return pil_img
+    # device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # try:
+        # model = RealESRGAN(device, scale=scale)
+        # scale_str = f"x{scale}plus"
+        # model_path = os.path.join(MODEL_DIR, f"RealESRGAN_{scale_str}.pth")
+        # if not os.path.exists(model_path):
+            # print(f"Fichier modèle RealESRGAN manquant : {model_path}")
+            # return pil_img
+        # model.load_weights(model_path)
+        # sr_img = model.predict(pil_img)
+        # print(f"Super-résolution {scale_str} appliquée.")
+        # return sr_img
+    # except Exception as e:
+        # print("Erreur Real-ESRGAN :", e)
+        # return pil_img
+
+
+# def opencv_superres(pil_img, scale=2, model_name='edsr', model_path=None):
+    # """
+    # Super-résolution par OpenCV DNN (très compatible).
+    # Modèles supportés: 'edsr', 'espcn', 'fsrcnn', 'lapsrn'
+    # Modèles gratuits à télécharger sur: https://github.com/opencv/opencv_contrib/tree/master/modules/dnn_superres/samples
+    # """
+    # sr = cv2.dnn_superres.DnnSuperResImpl_create()
+    # # Téléchargement des modèles ici si besoin (exemple pour EDSR x2)
+    # if not model_path:
+        # model_path = f"{model_name}_x{scale}.pb"
+    # if not os.path.exists(model_path):
+        # raise FileNotFoundError(f"Modèle super-résolution {model_path} non trouvé. Télécharge-le depuis le repo OpenCV.")
+    # sr.readModel(model_path)
+    # sr.setModel(model_name, scale)
+    # img_np = np.array(pil_img)
+    # if img_np.shape[-1] == 4:
+        # img_np = img_np[..., :3]  # retire alpha
+    # upscaled = sr.upsample(img_np)
+    # return Image.fromarray(upscaled)
 
 
 # ---- Utilitaires chimiques ----
@@ -227,13 +252,14 @@ class App:
 
     def process_pil_image(self, pil_img):
         print("Prétraitement de l'image (super-résolution si dispo)...")
-        pil_img = super_resolve_pil(pil_img, scale=2)
+        #pil_img = super_resolve_pil(pil_img, scale=2)
+        #pil_img = opencv_superres(pil_img, scale=2, model_name='edsr', model_path=None)
         params = [
-           # (1.0, 21, 4, 3, 'adaptive', "_A"),
-            #(1.5, 21, 4, 3, 'adaptive', "_B"),
-            #(2.0, 21, 4, 3, 'adaptive', "_C"),
-            #(1.0, 31, 6, 5, 'adaptive', "_D"),
-            #(1.5, 11, 2, 1, 'adaptive', "_E"),
+            (1.0, 21, 4, 3, 'adaptive', "_A"),
+            (1.5, 21, 4, 3, 'adaptive', "_B"),
+            (2.0, 21, 4, 3, 'adaptive', "_C"),
+            (1.0, 31, 6, 5, 'adaptive', "_D"),
+            (1.5, 11, 2, 1, 'adaptive', "_E"),
             (1.0, 0, 0, 0, 'otsu', "_F"),
         ]
 
@@ -290,12 +316,12 @@ class App:
                     "plausible": plausible,
                 })
         finally:
-            for f in glob.glob(f"{temp_base}*.png"):
-                try:
-                    os.remove(f)
-                except Exception as e:
-                    print(f"Erreur suppression temporaire {f}: {e}")
-        print(f"{len(results)} variantes analysées.")
+            # for f in glob.glob(f"{temp_base}*.png"):
+                # try:
+                    # os.remove(f)
+                # except Exception as e:
+                    # print(f"Erreur suppression temporaire {f}: {e}")
+            print(f"{len(results)} variantes analysées.")
         return results
 
     def show_results(self, pil_img):
