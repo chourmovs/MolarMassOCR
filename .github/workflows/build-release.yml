@@ -29,11 +29,25 @@ jobs:
           $pydir = Split-Path $pyexe.FullName
           echo "pydir=$pydir" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Install dependencies in WinPython
+      - name: Set Intel Optimizations Env Vars
+        shell: pwsh
+        run: |
+          echo "TF_ENABLE_ONEDNN_OPTS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "MKL_NUM_THREADS=4" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "OMP_NUM_THREADS=4" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Install dependencies in WinPython (Intel-optimized)
         shell: pwsh
         run: |
           & "${{ env.pythonexe }}" -m pip install --upgrade pip
-          & "${{ env.pythonexe }}" -m pip install tensorflow decimer rdkit-pypi opencv-python pillow matplotlib torch realesrgan torchvision
+          & "${{ env.pythonexe }}" -m pip install tensorflow decimer rdkit-pypi opencv-python pillow matplotlib
+          & "${{ env.pythonexe }}" -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+      # Optional: enable OpenVINO runtime (for iGPU support if DECIMER is adapted later)
+      #- name: Install OpenVINO Runtime (Optional)
+      #  shell: pwsh
+      #  run: |
+      #    & "${{ env.pythonexe }}" -m pip install openvino openvino-dev
 
       - name: Download DECIMER model in cache and copy to project
         shell: pwsh
@@ -43,22 +57,22 @@ jobs:
           from DECIMER import predict_SMILES
           import shutil
           from pathlib import Path
-          
+
           dummy = 'dummy.png'
           with open(dummy, 'wb') as f:
               f.write(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\xdacd\xf8\x0f\x00\x01\x05\x01\x02\xa2Z\xb2\x00\x00\x00\x00IEND\xaeB`\x82')
-          
+
           try:
               predict_SMILES(dummy)
           except Exception:
               pass
-          
+
           possible_paths = [
               Path.home() / '.cache' / 'decimer',
               Path.home() / '.data' / 'DECIMER-V2',
               Path.home() / '.data' / 'DECIMER-V2' / 'DECIMER_HandDrawn_model.zip'
           ]
-          
+
           found = False
           target = Path('models/decimer')
           if target.exists():
@@ -83,7 +97,6 @@ jobs:
       - name: Clean WinPython distribution (keep only minimal)
         shell: pwsh
         run: |
-          # Nettoie les fichiers/dossiers inutiles pour la portabilité
           Remove-Item -Recurse -Force $env:pydir\*.txt -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force $env:pydir\*.bat -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force $env:pydir\*.exe -Exclude python.exe
@@ -94,7 +107,7 @@ jobs:
           Remove-Item -Recurse -Force $env:pydir\tools -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force $env:pydir\doc -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force $env:pydir\notebooks -ErrorAction SilentlyContinue
-          # Nettoie pip, wheel, tests...
+
           $sitepk = "$env:pydir\Lib\site-packages"
           Remove-Item -Recurse -Force "$sitepk\pip*" -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force "$sitepk\setuptools*" -ErrorAction SilentlyContinue
@@ -113,7 +126,7 @@ jobs:
           if (!(Test-Path $models_dir)) { New-Item -ItemType Directory -Path $models_dir | Out-Null }
           Invoke-WebRequest -Uri "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth" -OutFile "$models_dir\RealESRGAN_x2plus.pth"
           Invoke-WebRequest -Uri "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth" -OutFile "$models_dir\RealESRGAN_x4plus.pth"
-      
+
       - name: Copy GUI script and models
         shell: pwsh
         run: |
@@ -133,7 +146,6 @@ jobs:
         run: |
           Set-Content "$env:pydir\README.txt" "# Lancement du GUI OCSR`n`nDouble-cliquez sur run.bat pour lancer le logiciel."
 
-      
       - name: Zip final portable WinPython
         shell: pwsh
         run: |
@@ -151,7 +163,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           body: |
-            Portable ZIP GUI WinPython Minimal (tkinter, Tensorflow, DECIMER, RDKit uniquement). Prêt à l'emploi : aucun téléchargement, ni installation nécessaire.
+            Portable ZIP GUI WinPython Minimal (tkinter, Tensorflow, DECIMER, RDKit uniquement). Optimisé Intel CPU (AVX2/oneDNN/MKL). Prêt à l'emploi : aucun téléchargement ni installation nécessaire.
           files: molar_mass_portable_winpython.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
