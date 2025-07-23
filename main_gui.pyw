@@ -1,6 +1,7 @@
 import os
 import sys
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageGrab
 import tempfile
@@ -113,55 +114,114 @@ def cas_to_name(cas):
 def clean_smiles_isotopes(smiles):
     return re.sub(r'\[(\d+)([A-Z][a-z]?)\]', r'\2', smiles)
 
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from tkinter import font as tkfont
+
 class App:
     def __init__(self, root):
         self.root = root
         self.root.title("Reconnaissance de masse molaire OCSR")
-        self.root.geometry("790x540")
-        self.root.resizable(False, False)
+        self.root.geometry("950x650")
+        self.root.minsize(900, 600)
+        self.bg_main = "#f5f8fc"
+        self.color_accent = "#4F8EF7"
+        self.bg_card = "#ffffff"
+        self.bg_console = "#1a2233"
+        self.fg_console = "#e0e6ef"
+        self.font_title = tkfont.Font(family="Segoe UI", size=17, weight="bold")
+        self.font_btn = tkfont.Font(family="Segoe UI", size=12, weight="bold")
+        self.font_result = tkfont.Font(family="Consolas", size=11)
+        self.font_console = tkfont.Font(family="Consolas", size=10)
 
-        left_frame = tk.Frame(root)
-        left_frame.pack(side="left", padx=10, pady=10)
-        self.panel_img = tk.Label(left_frame)
-        self.panel_img.pack()
+        # Header
+        header = tk.Frame(root, bg=self.color_accent, height=54)
+        header.pack(fill="x", side="top")
+        lbl_title = tk.Label(header, text="Reconnaissance de masse molaire OCSR", bg=self.color_accent, fg="#fff",
+                             font=self.font_title, padx=22, pady=11)
+        lbl_title.pack(side="left", anchor="w")
 
-        right_frame = tk.Frame(root)
-        right_frame.pack(side="right", fill="both", expand=True, padx=10)
+        # MAIN BODY
+        body = tk.Frame(root, bg=self.bg_main)
+        body.pack(fill="both", expand=True)
 
-        btn_open = tk.Button(right_frame, text="Ouvrir une image...", font=("Arial", 12), command=self.load_image)
-        btn_open.pack(pady=6, fill='x')
-        btn_paste = tk.Button(right_frame, text="Coller depuis le presse-papiers (Ctrl+V)", font=("Arial", 12), command=self.paste_image)
-        btn_paste.pack(pady=6, fill='x')
+        # -- ZONE IMAGE GAUCHE --
+        left_frame = tk.Frame(body, bg=self.bg_main, width=310)
+        left_frame.pack(side="left", fill="y", padx=(18,10), pady=18)
+        left_frame.pack_propagate(False)
+        self.panel_img = tk.Label(left_frame, bg=self.bg_card, bd=2, relief="groove")
+        self.panel_img.pack(pady=14, padx=5, fill="both", expand=True)
 
-        self.text_result = tk.Text(right_frame, width=56, height=12, font=("Consolas", 10))
-        self.text_result.pack(pady=8)
+        # -- ZONE DROITE (résultats + console) --
+        right_frame = tk.Frame(body, bg=self.bg_main)
+        right_frame.pack(side="left", fill="both", expand=True, padx=(0,22), pady=18)
+
+        # --- HAUT : BLOC RESULTATS ("carte") ---
+        card = tk.Frame(right_frame, bg=self.bg_card, bd=0, highlightbackground="#c7d4e8", highlightthickness=1)
+        card.pack(fill="x", expand=False, pady=(0, 9), anchor="n")
+
+        btn_open = tk.Button(
+            card, text="📂 Ouvrir une image...", font=self.font_btn,
+            bg="#e3edfa", fg="#2856b6", relief="flat", activebackground="#d2e3fa",
+            activeforeground="#24447c", cursor="hand2",
+            command=self.load_image
+        )
+        btn_open.pack(pady=8, padx=16, fill='x')
+
+        btn_paste = tk.Button(
+            card, text="📋 Coller depuis le presse-papiers (Ctrl+V)", font=self.font_btn,
+            bg="#e3edfa", fg="#2856b6", relief="flat", activebackground="#d2e3fa",
+            activeforeground="#24447c", cursor="hand2",
+            command=self.paste_image
+        )
+        btn_paste.pack(pady=5, padx=16, fill='x')
+
+        # Zone résultats
+        self.text_result = tk.Text(card, width=60, height=11, font=self.font_result,
+                                   bg=self.bg_card, fg="#21262c", bd=0, highlightthickness=0)
+        self.text_result.pack(pady=8, padx=10)
         self.text_result.tag_configure("rouge", foreground="red")
 
-        console_frame = tk.LabelFrame(right_frame, text="Console interne", padx=2, pady=2)
-        console_frame.pack(fill="both", expand=False, pady=(0,6))
-        self.text_console = tk.Text(console_frame, height=7, font=("Consolas", 9), state='disabled', bg="#21262c", fg="#e6e6e6")
-        self.text_console.pack(fill="both", expand=True)
-        sys.stdout = ConsoleRedirector(self.text_console)
-        sys.stderr = ConsoleRedirector(self.text_console)
-        print("Console interne activée. Tous les print() apparaîtront ici.")
-
-        nav_frame = tk.Frame(right_frame)
-        nav_frame.pack(pady=2)
-        self.btn_prev = tk.Button(nav_frame, text="◀ Précédent", command=self.prev_variant)
-        self.btn_prev.pack(side="left", padx=3)
-        self.lbl_num = tk.Label(nav_frame, text="Variante 1/1", width=15)
+        # Navigation variants
+        nav_frame = tk.Frame(card, bg=self.bg_card)
+        nav_frame.pack(pady=(0,5))
+        self.btn_prev = tk.Button(
+            nav_frame, text="◀", font=self.font_btn, width=3,
+            bg="#dde9fc", fg="#3572b0", relief="flat", cursor="hand2",
+            command=self.prev_variant
+        )
+        self.btn_prev.pack(side="left", padx=2)
+        self.lbl_num = tk.Label(nav_frame, text="Variante 1/1", font=self.font_btn, bg=self.bg_card, fg="#3b4150")
         self.lbl_num.pack(side="left", padx=3)
-        self.btn_next = tk.Button(nav_frame, text="Suivant ▶", command=self.next_variant)
-        self.btn_next.pack(side="left", padx=3)
-        btn_copy_smiles = tk.Button(right_frame, text="Copier SMILES dans le presse-papiers", font=("Arial", 11), command=self.copy_smiles)
-        btn_copy_smiles.pack(pady=3, fill='x')
+        self.btn_next = tk.Button(
+            nav_frame, text="▶", font=self.font_btn, width=3,
+            bg="#dde9fc", fg="#3572b0", relief="flat", cursor="hand2",
+            command=self.next_variant
+        )
+        self.btn_next.pack(side="left", padx=2)
 
-        self.variants = []
-        self.current_variant = 0
-        self.smiles_last = None
+        btn_copy_smiles = tk.Button(
+            card, text="Copier SMILES dans le presse-papiers", font=self.font_btn,
+            bg="#d2f2d2", fg="#25772a", activebackground="#bef0c6", relief="flat",
+            cursor="hand2", command=self.copy_smiles
+        )
+        btn_copy_smiles.pack(pady=(7,10), padx=16, fill='x')
 
-        self.update_nav_buttons()
+        # --- BAS : CONSOLE OCCUPE TOUT L'ESPACE RESTANT ---
+        console_frame = tk.LabelFrame(right_frame, text="Console interne", padx=5, pady=5,
+                                     bg=self.bg_main, fg="#313749", font=self.font_btn, bd=1, relief="groove",
+                                     labelanchor="nw")
+        console_frame.pack(fill="both", expand=True, pady=(0,0))
+        self.text_console = tk.Text(console_frame, font=self.font_console,
+                                    state='normal', bg=self.bg_console, fg=self.fg_console,
+                                    insertbackground="white", bd=0, highlightthickness=0)
+        self.text_console.pack(fill="both", expand=True)
+
+        # Raccourci clavier
         self.root.bind('<Control-v>', lambda event: self.paste_image())
+
+
+
 
     def process_pil_image(self, pil_img):
         results = []
