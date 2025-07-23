@@ -23,7 +23,7 @@ class ConsoleRedirector:
     def flush(self): pass
 
 # --- Gradio client (à instancier UNE seule fois) ---
-client = grc.Client("https://0ce0b836e86cc69f59.gradio.live")
+client = grc.Client("https://chouchouvs-distance-smiles.hf.space/")
 
 def enhance_image(pil_img):
     from PIL import ImageEnhance, ImageFilter
