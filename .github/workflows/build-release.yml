@@ -40,8 +40,7 @@ jobs:
         shell: pwsh
         run: |
           & "${{ env.pythonexe }}" -m pip install --upgrade pip
-          & "${{ env.pythonexe }}" -m pip install tensorflow rdkit-pypi opencv-python pillow matplotlib gradio-client
-          & "${{ env.pythonexe }}" -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          & "${{ env.pythonexe }}" -m pip install rdkit-pypi opencv-python pillow matplotlib gradio-client
 
       # Bloc DECIMER supprimé ici (plus de téléchargement/copie du modèle)
 
@@ -70,19 +69,17 @@ jobs:
         run: |
           Copy-Item bin\pythonw.exe $env:pydir\
 
-      - name: Copy GUI script and models
+      - name: Copy GUI script
         shell: pwsh
         run: |
           Copy-Item main_gui.pyw $env:pydir\
-          Copy-Item -Recurse models $env:pydir\models
 
       - name: Prepare run.bat
         shell: pwsh
         run: |
           Set-Content "$env:pydir\run.bat" '@echo off
           cd /d %~dp0
-          start /min "" pythonw.exe main_gui.pyw > debug.log 2>&1
-          pause'
+          start /min "" pythonw.exe main_gui.pyw'
 
       - name: Prepare README
         shell: pwsh
