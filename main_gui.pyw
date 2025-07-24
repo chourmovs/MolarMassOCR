@@ -115,9 +115,6 @@ def cas_to_name(cas):
 def clean_smiles_isotopes(smiles):
     return re.sub(r'\[(\d+)([A-Z][a-z]?)\]', r'\2', smiles)
 
-import tkinter as tk
-from tkinter import filedialog, messagebox
-from tkinter import font as tkfont
 
 class App:
     def __init__(self, root):
@@ -226,15 +223,11 @@ class App:
         self.log_console("Console initialisée : prêt à analyser vos images.")
 
 
-        # AJOUTE CECI
     def log_console(self, message):
             self.text_console.config(state='normal')
             self.text_console.insert('end', message + "\n")
             self.text_console.see('end')
             self.text_console.config(state='disabled')
-
-
-
 
 
     def process_pil_image(self, pil_img):
