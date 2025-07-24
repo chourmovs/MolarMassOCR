@@ -20,8 +20,9 @@ class ConsoleRedirector:
         self.text_widget.configure(state='normal')
         self.text_widget.insert('end', msg)
         self.text_widget.see('end')
-        self.text_widget.configure(state='disabled')
+        self.text_widget.configure(state='disabled')  # Fix: use 'disabled'
     def flush(self): pass
+
 
 # --- Gradio client (à instancier UNE seule fois) ---
 client = grc.Client("https://chouchouvs-distance-smiles.hf.space/")
@@ -216,9 +217,22 @@ class App:
                                     state='normal', bg=self.bg_console, fg=self.fg_console,
                                     insertbackground="white", bd=0, highlightthickness=0)
         self.text_console.pack(fill="both", expand=True)
+        # Redirection de la sortie standard et erreurs vers la console interne
+        sys.stdout = ConsoleRedirector(self.text_console)
+        sys.stderr = ConsoleRedirector(self.text_console)
 
-        # Raccourci clavier
-        self.root.bind('<Control-v>', lambda event: self.paste_image())
+
+        # Afficher un log dès la création
+        self.log_console("Console initialisée : prêt à analyser vos images.")
+
+
+        # AJOUTE CECI
+    def log_console(self, message):
+            self.text_console.config(state='normal')
+            self.text_console.insert('end', message + "\n")
+            self.text_console.see('end')
+            self.text_console.config(state='disabled')
+
 
 
 
@@ -391,6 +405,7 @@ class App:
             self.root.update()
             messagebox.showinfo("SMILES copié", "La chaîne SMILES a été copiée dans le presse-papiers.")
             print(f"SMILES copié: {smiles}")
+            self.log_console("Message pour test")
         else:
             messagebox.showwarning("SMILES", "Aucun SMILES à copier.")
             print("Aucun SMILES à copier.")
