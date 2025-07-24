@@ -42,8 +42,6 @@ jobs:
           & "${{ env.pythonexe }}" -m pip install --upgrade pip
           & "${{ env.pythonexe }}" -m pip install rdkit-pypi opencv-python pillow matplotlib gradio-client
 
-      # Bloc DECIMER supprimé ici (plus de téléchargement/copie du modèle)
-
       - name: Clean WinPython distribution (keep only minimal)
         shell: pwsh
         run: |
@@ -84,7 +82,7 @@ jobs:
       - name: Prepare README
         shell: pwsh
         run: |
-          Set-Content "$env:pydir\README.txt" "# Lancement du GUI OCSR`n`nDouble-cliquez sur run.bat pour lancer le logiciel."
+          Set-Content "$env:pydir\README.txt" "# Lancement du GUI OCSRnnDouble-cliquez sur run.bat pour lancer le logiciel."
 
       - name: Zip final portable WinPython
         shell: pwsh
