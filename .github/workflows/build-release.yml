@@ -79,8 +79,7 @@ jobs:
         run: |
           Set-Content "$env:pydir\run.bat" '@echo off
           cd /d %~dp0
-          start /min "" pythonw.exe main_gui.pyw > debug.log 2>&1
-          pause'
+          start /min "" pythonw.exe main_gui.pyw'
 
       - name: Prepare README
         shell: pwsh
