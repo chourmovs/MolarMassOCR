@@ -69,11 +69,10 @@ jobs:
         run: |
           Copy-Item bin\pythonw.exe $env:pydir\
 
-      - name: Copy GUI script and models
+      - name: Copy GUI script
         shell: pwsh
         run: |
           Copy-Item main_gui.pyw $env:pydir\
-          Copy-Item -Recurse models $env:pydir\models
 
       - name: Prepare run.bat
         shell: pwsh
