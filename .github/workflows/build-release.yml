@@ -40,59 +40,7 @@ jobs:
         shell: pwsh
         run: |
           & "${{ env.pythonexe }}" -m pip install --upgrade pip
-          & "${{ env.pythonexe }}" -m pip install tensorflow decimer rdkit-pypi opencv-python pillow matplotlib
-          & "${{ env.pythonexe }}" -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-      # Optional: enable OpenVINO runtime (for iGPU support if DECIMER is adapted later)
-      #- name: Install OpenVINO Runtime (Optional)
-      #  shell: pwsh
-      #  run: |
-      #    & "${{ env.pythonexe }}" -m pip install openvino openvino-dev
-
-      - name: Download DECIMER model in cache and copy to project
-        shell: pwsh
-        run: |
-          & "${{ env.pythonexe }}" -c "
-          import os
-          from DECIMER import predict_SMILES
-          import shutil
-          from pathlib import Path
-
-          dummy = 'dummy.png'
-          with open(dummy, 'wb') as f:
-              f.write(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\xdacd\xf8\x0f\x00\x01\x05\x01\x02\xa2Z\xb2\x00\x00\x00\x00IEND\xaeB\x82')
-
-          try:
-              predict_SMILES(dummy)
-          except Exception:
-              pass
-
-          possible_paths = [
-              Path.home() / '.cache' / 'decimer',
-              Path.home() / '.data' / 'DECIMER-V2',
-              Path.home() / '.data' / 'DECIMER-V2' / 'DECIMER_HandDrawn_model.zip'
-          ]
-
-          found = False
-          target = Path('models/decimer')
-          if target.exists():
-              shutil.rmtree(target)
-          for path in possible_paths:
-              if path.exists():
-                  if path.is_dir():
-                      shutil.copytree(path, target)
-                      print(f'Modèle/dossier copié de {path} vers {target}')
-                      found = True
-                      break
-                  elif path.is_file():
-                      target.mkdir(parents=True, exist_ok=True)
-                      shutil.copy2(path, target / path.name)
-                      print(f'Fichier zip copié de {path} vers {target / path.name}')
-                      found = True
-                      break
-          if not found:
-              raise RuntimeError('Impossible de trouver un modèle DECIMER après téléchargement.')
-          "
+          & "${{ env.pythonexe }}" -m pip install rdkit-pypi opencv-python pillow matplotlib gradio-client
 
       - name: Clean WinPython distribution (keep only minimal)
         shell: pwsh
@@ -119,27 +67,17 @@ jobs:
         run: |
           Copy-Item bin\pythonw.exe $env:pydir\
 
-      - name: Download RealESRGAN models
-        shell: pwsh
-        run: |
-          $models_dir = "models"
-          if (!(Test-Path $models_dir)) { New-Item -ItemType Directory -Path $models_dir | Out-Null }
-          Invoke-WebRequest -Uri "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth" -OutFile "$models_dir\RealESRGAN_x2plus.pth"
-          Invoke-WebRequest -Uri "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth" -OutFile "$models_dir\RealESRGAN_x4plus.pth"
-
-      - name: Copy GUI script and models
+      - name: Copy GUI script
         shell: pwsh
         run: |
           Copy-Item main_gui.pyw $env:pydir\
-          Copy-Item -Recurse models $env:pydir\models
 
       - name: Prepare run.bat
         shell: pwsh
         run: |
           Set-Content "$env:pydir\run.bat" '@echo off
           cd /d %~dp0
-          start /min "" pythonw.exe main_gui.pyw > debug.log 2>&1
-          pause'
+          start /min "" pythonw.exe main_gui.pyw'
 
       - name: Prepare README
         shell: pwsh
