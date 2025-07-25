@@ -20,11 +20,9 @@ class ConsoleRedirector:
         self.text_widget.configure(state='normal')
         self.text_widget.insert('end', msg)
         self.text_widget.see('end')
-        self.text_widget.configure(state='disabled')  # Fix: use 'disabled'
+        self.text_widget.configure(state='disabled')
     def flush(self): pass
 
-
-# --- Gradio client (à instancier UNE seule fois) ---
 client = grc.Client("https://chouchouvs-distance-smiles.hf.space/")
 
 def enhance_image(pil_img):
@@ -34,8 +32,7 @@ def enhance_image(pil_img):
     img = img.filter(ImageFilter.MedianFilter(size=3))
     return img
 
-import tempfile
-from gradio_client import Client, handle_file
+from gradio_client import handle_file
 
 def predict_smiles_with_gradio(pil_img):
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
@@ -46,9 +43,6 @@ def predict_smiles_with_gradio(pil_img):
         api_name="/predict"
     )
     return result
-
-
-
 
 atomic_weights = {
     "H": 1.008, "C": 12.011, "N": 14.007, "O": 15.999,
@@ -115,7 +109,6 @@ def cas_to_name(cas):
 def clean_smiles_isotopes(smiles):
     return re.sub(r'\[(\d+)([A-Z][a-z]?)\]', r'\2', smiles)
 
-
 class App:
     def __init__(self, root):
         self.root = root
@@ -132,6 +125,17 @@ class App:
         self.font_result = tkfont.Font(family="Consolas", size=11)
         self.font_console = tkfont.Font(family="Consolas", size=10)
 
+        # ZOOM & PAN paramètres
+        self.zoom_factor = 1.0
+        self.min_zoom = 0.2
+        self.max_zoom = 4.0
+        self.img_pil_displayed = None
+        self.img_tk = None
+        self.pan_x = 0
+        self.pan_y = 0
+        self.drag_start_x = None
+        self.drag_start_y = None
+
         # Header
         header = tk.Frame(root, bg=self.color_accent, height=54)
         header.pack(fill="x", side="top")
@@ -147,8 +151,41 @@ class App:
         left_frame = tk.Frame(body, bg=self.bg_main, width=310)
         left_frame.pack(side="left", fill="y", padx=(18,10), pady=18)
         left_frame.pack_propagate(False)
-        self.panel_img = tk.Label(left_frame, bg=self.bg_card, bd=2, relief="groove")
-        self.panel_img.pack(pady=14, padx=5, fill="both", expand=True)
+
+        # Container image + boutons overlay
+        self.image_container = tk.Frame(left_frame, bg=self.bg_main, width=300, height=300)
+        self.image_container.pack(fill="both", expand=True)
+        self.image_container.pack_propagate(False)
+
+        # Bouton reset zoom
+        self.btn_reset_zoom = tk.Button(
+            self.image_container, text="⟳", font=("Arial", 12, "bold"),
+            relief="flat", bg="#e3edfa", fg="#3572b0", activebackground="#d2e3fa",
+            activeforeground="#24447c", cursor="hand2", width=2, height=1,
+            command=self.reset_zoom
+        )
+        self.btn_reset_zoom.place(relx=1.0, x=-5, y=5, anchor="ne")
+
+        # Bouton loupe HD
+        self.btn_hd = tk.Button(
+            self.image_container, text="🔎", font=("Arial", 12, "bold"),
+            relief="flat", bg="#e3edfa", fg="#3572b0", activebackground="#d2e3fa",
+            activeforeground="#24447c", cursor="hand2", width=2, height=1,
+            command=self.show_full_res
+        )
+        self.btn_hd.place(relx=1.0, x=-50, y=5, anchor="ne")
+
+        # Canvas pour image (pan+zoom)
+        self.canvas_img = tk.Canvas(self.image_container, bg=self.bg_card, bd=2, relief="groove", highlightthickness=0)
+        self.canvas_img.pack(pady=(25,10), padx=5, fill="both", expand=True)
+
+        # Bindings pan & zoom
+        self.canvas_img.bind("<MouseWheel>", self.on_mousewheel_zoom)
+        self.canvas_img.bind("<Button-4>", self.on_mousewheel_zoom_linux)
+        self.canvas_img.bind("<Button-5>", self.on_mousewheel_zoom_linux)
+        self.canvas_img.bind("<ButtonPress-1>", self.start_pan)
+        self.canvas_img.bind("<B1-Motion>", self.do_pan)
+        self.canvas_img.bind("<ButtonRelease-1>", self.end_pan)
 
         # -- ZONE DROITE (résultats + console) --
         right_frame = tk.Frame(body, bg=self.bg_main)
@@ -214,21 +251,86 @@ class App:
                                     state='normal', bg=self.bg_console, fg=self.fg_console,
                                     insertbackground="white", bd=0, highlightthickness=0)
         self.text_console.pack(fill="both", expand=True)
-        # Redirection de la sortie standard et erreurs vers la console interne
         sys.stdout = ConsoleRedirector(self.text_console)
         sys.stderr = ConsoleRedirector(self.text_console)
 
-
-        # Afficher un log dès la création
         self.log_console("Console initialisée : prêt à analyser vos images.")
 
-
     def log_console(self, message):
-            self.text_console.config(state='normal')
-            self.text_console.insert('end', message + "\n")
-            self.text_console.see('end')
-            self.text_console.config(state='disabled')
+        self.text_console.config(state='normal')
+        self.text_console.insert('end', message + "\n")
+        self.text_console.see('end')
+        self.text_console.config(state='disabled')
 
+    # ----------- ZOOM + PAN + HD --------------------
+
+    def update_panel_img(self):
+        self.canvas_img.delete("all")
+        if self.img_pil_displayed is None:
+            return
+        pil = self.img_pil_displayed
+        w, h = pil.size
+        z = self.zoom_factor
+        w_z, h_z = int(w * z), int(h * z)
+        img_zoomed = pil.resize((w_z, h_z), Image.LANCZOS)
+        self.img_tk = ImageTk.PhotoImage(img_zoomed)
+        c_width = self.canvas_img.winfo_width()
+        c_height = self.canvas_img.winfo_height()
+        # S'assure que le centrage et pan sont bien gérés même si frame redimensionnée
+        x = c_width // 2 - w_z // 2 + self.pan_x
+        y = c_height // 2 - h_z // 2 + self.pan_y
+        self.canvas_img.create_image(x, y, anchor="nw", image=self.img_tk)
+
+    def on_mousewheel_zoom(self, event):
+        if event.delta > 0:
+            self.zoom_factor = min(self.zoom_factor * 1.13, self.max_zoom)
+        else:
+            self.zoom_factor = max(self.zoom_factor / 1.13, self.min_zoom)
+        self.update_panel_img()
+
+    def on_mousewheel_zoom_linux(self, event):
+        if event.num == 4:
+            self.zoom_factor = min(self.zoom_factor * 1.13, self.max_zoom)
+        elif event.num == 5:
+            self.zoom_factor = max(self.zoom_factor / 1.13, self.min_zoom)
+        self.update_panel_img()
+
+    def reset_zoom(self):
+        self.zoom_factor = 1.0
+        self.pan_x = 0
+        self.pan_y = 0
+        self.update_panel_img()
+
+    def start_pan(self, event):
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+
+    def do_pan(self, event):
+        dx = event.x - self.drag_start_x
+        dy = event.y - self.drag_start_y
+        self.pan_x += dx
+        self.pan_y += dy
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+        self.update_panel_img()
+
+    def end_pan(self, event):
+        self.drag_start_x = None
+        self.drag_start_y = None
+
+    def show_full_res(self):
+        if self.img_pil_displayed is None:
+            return
+        win = tk.Toplevel(self.root)
+        win.title("Structure - Haute résolution")
+        pil = self.img_pil_displayed
+        img_tk = ImageTk.PhotoImage(pil)
+        lbl = tk.Label(win, image=img_tk)
+        lbl.image = img_tk
+        lbl.pack()
+        win.geometry(f"{pil.width}x{pil.height}")
+
+    # ----------- Logique existante ------------
 
     def process_pil_image(self, pil_img):
         results = []
@@ -251,7 +353,7 @@ class App:
                 formula = rdMolDescriptors.CalcMolFormula(mol)
                 mass_exact = rdMolDescriptors.CalcExactMolWt(mol)
                 mass_moyenne = Descriptors.MolWt(mol)
-                img_rdkit = Draw.MolToImage(mol, size=(220, 220))
+                img_rdkit = Draw.MolToImage(mol, size=(440, 440))  # taille + grande pour HD
             else:
                 formula = "??"
                 mass_exact = None
@@ -288,18 +390,22 @@ class App:
 
     def show_current_variant(self):
         if not self.variants:
-            self.panel_img.configure(image='')
+            self.img_pil_displayed = None
+            self.update_panel_img()
             self.text_result.delete(1.0, tk.END)
             self.text_result.insert(tk.END, "Aucune structure reconnue.\n")
             self.update_nav_buttons()
             return
         var = self.variants[self.current_variant]
         if var["mol_img"]:
-            img_tk = ImageTk.PhotoImage(var["mol_img"])
-            self.panel_img.configure(image=img_tk)
-            self.panel_img.image = img_tk
+            self.img_pil_displayed = var["mol_img"]
+            self.pan_x = 0
+            self.pan_y = 0
+            self.zoom_factor = 1.0
+            self.update_panel_img()
         else:
-            self.panel_img.configure(image='')
+            self.img_pil_displayed = None
+            self.update_panel_img()
         self.text_result.delete(1.0, tk.END)
         msg, warning = self.format_variant(var, self.current_variant+1)
         if warning:
