@@ -36,6 +36,11 @@ jobs:
           echo "MKL_NUM_THREADS=4" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "OMP_NUM_THREADS=4" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      - name: Remove any NumPy 2.x before install
+        shell: pwsh
+        run: |
+          & "${{ env.pythonexe }}" -m pip uninstall -y numpy
+
       - name: Install dependencies with compatible NumPy (NumPy 1.x)
         shell: pwsh
         run: |
