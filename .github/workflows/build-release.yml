@@ -91,10 +91,43 @@ jobs:
         run: |
           Set-Content "$env:pydir\README.txt" "# Lancement du GUI OCSRnnDouble-cliquez sur run.bat pour lancer le logiciel."
 
-      - name: Zip final portable WinPython
+      - name: Ultra clean site-packages
         shell: pwsh
         run: |
-          7z a -mx=1 molar_mass_portable_winpython.zip "$env:pydir\*"
+          $sitepk = "$env:pydir\Lib\site-packages"
+          # Supprimer dossiers inutiles dans chaque package
+          Get-ChildItem -Path $sitepk -Directory -Recurse | Where-Object { $_.Name -match "test|tests|testing|benchmarks|docs|examples|__pycache__" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          # Supprimer tous les .pyc, .pyo, .a, .lib, .c, .h, .pdb
+          Get-ChildItem -Path $sitepk -Recurse -Include *.pyc,*.pyo,*.a,*.lib,*.c,*.h,*.pdb | Remove-Item -Force -ErrorAction SilentlyContinue
+          # Supprimer les .dist-info inutiles (ne garde que rdkit, Pillow, gradio-client, opencv, matplotlib, numpy)
+          Get-ChildItem -Path $sitepk -Directory | Where-Object {
+            $_.Name -like "*.dist-info" -and
+            $_.Name -notlike "rdkit-*.dist-info" -and
+            $_.Name -notlike "Pillow-*.dist-info" -and
+            $_.Name -notlike "gradio_client-*.dist-info" -and
+            $_.Name -notlike "opencv_python-*.dist-info" -and
+            $_.Name -notlike "matplotlib-*.dist-info" -and
+            $_.Name -notlike "numpy-*.dist-info"
+          } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          # Optionnel : clean encore les traces de pip
+          Remove-Item -Recurse -Force "$sitepk\pip*" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$sitepk\setuptools*" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$sitepk\wheel*" -ErrorAction SilentlyContinue
+
+      - name: UPX compress python executables (optional)
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          # UPX doit être dans le PATH ou à côté (sinon skip sans planter)
+          try {
+            & upx --best --lzma "$env:pydir\python.exe"
+            & upx --best --lzma "$env:pydir\pythonw.exe"
+          } catch { Write-Host "UPX not found, skipping EXE compression." }
+
+      - name: Zip final portable WinPython (compression maximale)
+        shell: pwsh
+        run: |
+          7z a -mx=9 molar_mass_portable_winpython.zip "$env:pydir\*"
 
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
