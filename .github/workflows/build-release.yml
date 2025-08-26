@@ -136,22 +136,58 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $paths = @(
-            "$Env:ProgramFiles\Windows Defender\MpCmdRun.exe",
-            "$Env:ProgramFiles\Microsoft Defender\MpCmdRun.exe"
-          ) | Where-Object { Test-Path $_ }
-          if (-not $paths) { throw "MpCmdRun.exe introuvable" }
-          & $paths[0] -SignatureUpdate
+          $ErrorActionPreference = 'Stop'
+
+          function Get-MpCmdPath {
+            $cmd = Get-Command MpCmdRun.exe -ErrorAction SilentlyContinue
+            if ($cmd) {
+              return ($cmd.Source ?? $cmd.Path ?? $cmd.CommandType)
+            }
+            $candidates = @(
+              "C:\Program Files\Microsoft Defender\MpCmdRun.exe",
+              "C:\Program Files\Windows Defender\MpCmdRun.exe"
+            )
+            foreach ($c in $candidates) {
+              if (Test-Path $c) { return $c }
+            }
+            throw "MpCmdRun.exe introuvable"
+          }
+
+          try {
+            if (Get-Command Update-MpSignature -ErrorAction SilentlyContinue) {
+              Update-MpSignature
+            } else {
+              $mp = Get-MpCmdPath
+              & "$mp" -SignatureUpdate
+            }
+          } catch {
+            Write-Warning "Update signatures failed: $($_.Exception.Message). Je poursuis."
+          }
 
       - name: Microsoft Defender scan (ZIP)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $paths = @(
-            "$Env:ProgramFiles\Windows Defender\MpCmdRun.exe",
-            "$Env:ProgramFiles\Microsoft Defender\MpCmdRun.exe"
-          ) | Where-Object { Test-Path $_ }
-          & $paths[0] -Scan -ScanType 3 -File "$PWD\molar_mass_portable_winpython.zip"
+          $ErrorActionPreference = 'Stop'
+
+          function Get-MpCmdPath {
+            $cmd = Get-Command MpCmdRun.exe -ErrorAction SilentlyContinue
+            if ($cmd) {
+              return ($cmd.Source ?? $cmd.Path ?? $cmd.CommandType)
+            }
+            $candidates = @(
+              "C:\Program Files\Microsoft Defender\MpCmdRun.exe",
+              "C:\Program Files\Windows Defender\MpCmdRun.exe"
+            )
+            foreach ($c in $candidates) {
+              if (Test-Path $c) { return $c }
+            }
+            throw "MpCmdRun.exe introuvable"
+          }
+
+          $mp = Get-MpCmdPath
+          & "$mp" -Scan -ScanType 3 -File "$PWD\molar_mass_portable_winpython.zip"
+
 
       - name: Install ClamAV (via Chocolatey) and update db
         shell: pwsh
