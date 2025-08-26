@@ -189,28 +189,63 @@ jobs:
           & "$mp" -Scan -ScanType 3 -File "$PWD\molar_mass_portable_winpython.zip"
 
 
-      - name: Install ClamAV (via Chocolatey) and update db
+      - name: Install ClamAV (via Chocolatey)
         shell: pwsh
         run: |
-          choco install clamav -y
-          $clam = "C:\Program Files\ClamAV"
-          if (!(Test-Path "$clam")) { throw "ClamAV non installé" }
-          Copy-Item "$clam\conf_examples\freshclam.conf.sample" "$clam\freshclam.conf" -Force
-          # Définir un miroir et un dossier de DB
-          (Get-Content "$clam\freshclam.conf") `
-            -replace '#DatabaseMirror ', 'DatabaseMirror ' `
-            -replace '#DatabaseDirectory ', 'DatabaseDirectory ' `
-            | Set-Content "$clam\freshclam.conf"
-          Add-Content "$clam\freshclam.conf" "DatabaseMirror database.clamav.net"
-          Add-Content "$clam\freshclam.conf" "DatabaseDirectory $clam\db"
-          New-Item -ItemType Directory -Force -Path "$clam\db" | Out-Null
-          & "$clam\freshclam.exe" --datadir="$clam\db"
+          $ErrorActionPreference = 'Stop'
+          choco install clamav -y --no-progress
+
+      - name: Update ClamAV virus database (freshclam)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Resolve-Exe([string]$name) {
+            $cmd = Get-Command $name -ErrorAction SilentlyContinue
+            if ($cmd -and $cmd.Source) { return $cmd.Source }
+            throw "$name introuvable dans le PATH"
+          }
+
+          $freshclam = Resolve-Exe "freshclam.exe"
+
+          # Dossier DB local (évite d'écrire sous Program Files / ProgramData)
+          $db = Join-Path $env:RUNNER_TEMP "clamdb"
+          New-Item -ItemType Directory -Force -Path $db | Out-Null
+
+          # Mise à jour des signatures
+          & "$freshclam" --datadir="$db"
+          $code = $LASTEXITCODE
+          # 0 = ok, 1 = déjà à jour (ou warning benignes selon miroir), >1 = erreurs
+          if ($code -gt 1) {
+            throw "freshclam a échoué avec code $code"
+          } else {
+            Write-Host "freshclam terminé (exit $code)."
+          }
 
       - name: ClamAV scan (ZIP)
         shell: pwsh
         run: |
-          $clam = "C:\Program Files\ClamAV"
-          & "$clam\clamscan.exe" --database="$clam\db" -i -r "$PWD\molar_mass_portable_winpython.zip"
+          $ErrorActionPreference = 'Stop'
+
+          function Resolve-Exe([string]$name) {
+            $cmd = Get-Command $name -ErrorAction SilentlyContinue
+            if ($cmd -and $cmd.Source) { return $cmd.Source }
+            throw "$name introuvable dans le PATH"
+          }
+
+          $clamscan = Resolve-Exe "clamscan.exe"
+          $db = Join-Path $env:RUNNER_TEMP "clamdb"
+
+          & "$clamscan" --database="$db" -i -r "$PWD\molar_mass_portable_winpython.zip"
+          $code = $LASTEXITCODE
+          if ($code -eq 0) {
+            Write-Host "ClamAV: aucun malware détecté."
+          } elseif ($code -eq 1) {
+            throw "❌ ClamAV: malware détecté dans l'archive"
+          } else {
+            throw "ClamAV a échoué (exit $code)"
+          }
+
 
       - name: Compute SHA256 (pour release notes)
         id: sha
