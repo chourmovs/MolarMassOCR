@@ -132,27 +132,23 @@ jobs:
       # ─────────────────────────────────────────
       # 🔒 SCANS LOCAUX : DEFENDER + CLAMAV
       # ─────────────────────────────────────────
+           # ─────────────────────────────────────────
+      # 🔒 SCANS LOCAUX : DEFENDER + CLAMAV
+      # ─────────────────────────────────────────
       - name: Update Microsoft Defender signatures
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-
           function Get-MpCmdPath {
             $cmd = Get-Command MpCmdRun.exe -ErrorAction SilentlyContinue
-            if ($cmd) {
-              return ($cmd.Source ?? $cmd.Path ?? $cmd.CommandType)
-            }
-            $candidates = @(
+            if ($cmd) { return ($cmd.Source ?? $cmd.Path) }
+            foreach ($c in @(
               "C:\Program Files\Microsoft Defender\MpCmdRun.exe",
               "C:\Program Files\Windows Defender\MpCmdRun.exe"
-            )
-            foreach ($c in $candidates) {
-              if (Test-Path $c) { return $c }
-            }
+            )) { if (Test-Path $c) { return $c } }
             throw "MpCmdRun.exe introuvable"
           }
-
           try {
             if (Get-Command Update-MpSignature -ErrorAction SilentlyContinue) {
               Update-MpSignature
@@ -169,25 +165,17 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-
           function Get-MpCmdPath {
             $cmd = Get-Command MpCmdRun.exe -ErrorAction SilentlyContinue
-            if ($cmd) {
-              return ($cmd.Source ?? $cmd.Path ?? $cmd.CommandType)
-            }
-            $candidates = @(
+            if ($cmd) { return ($cmd.Source ?? $cmd.Path) }
+            foreach ($c in @(
               "C:\Program Files\Microsoft Defender\MpCmdRun.exe",
               "C:\Program Files\Windows Defender\MpCmdRun.exe"
-            )
-            foreach ($c in $candidates) {
-              if (Test-Path $c) { return $c }
-            }
+            )) { if (Test-Path $c) { return $c } }
             throw "MpCmdRun.exe introuvable"
           }
-
           $mp = Get-MpCmdPath
           & "$mp" -Scan -ScanType 3 -File "$PWD\molar_mass_portable_winpython.zip"
-
 
       - name: Install ClamAV (via Chocolatey)
         shell: pwsh
@@ -195,24 +183,22 @@ jobs:
           $ErrorActionPreference = 'Stop'
           choco install clamav -y --no-progress
 
-            - name: Update ClamAV virus database (freshclam)
-      - shell: pwsh
+      - name: Update ClamAV virus database (freshclam)
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-
           function Resolve-Exe([string]$name) {
             $cmd = Get-Command $name -ErrorAction SilentlyContinue
             if ($cmd -and $cmd.Source) { return $cmd.Source }
             throw "$name introuvable dans le PATH"
           }
-
           $freshclam = Resolve-Exe "freshclam.exe"
 
-          # Dossier DB local (évite Program Files/ProgramData)
-          $db = Join-Path $env:RUNNER_TEMP "clamdb"
+          # Dossier DB local
+          $db  = Join-Path $env:RUNNER_TEMP "clamdb"
           New-Item -ItemType Directory -Force -Path $db | Out-Null
 
-          # Conf minimale temporaire pour freshclam
+          # Conf minimale temporaire (évite la conf choco par défaut)
           $conf = Join-Path $env:RUNNER_TEMP "freshclam.conf"
           $log  = Join-Path $env:RUNNER_TEMP "freshclam.log"
           @"
@@ -223,11 +209,8 @@ jobs:
           MaxAttempts 3
           "@ | Set-Content -Encoding ASCII $conf
 
-          # Mise à jour des signatures avec conf explicite
           & "$freshclam" --config-file="$conf" --datadir="$db" --verbose
           $code = $LASTEXITCODE
-
-          # 0 = OK ; 1 = parfois "déjà à jour"/warnings selon miroirs ; >1 = erreurs
           if ($code -eq 0) {
             Write-Host "freshclam terminé (exit 0)."
           } elseif ($code -eq 1) {
@@ -242,18 +225,15 @@ jobs:
             throw "freshclam a échoué avec code $code"
           }
 
-
       - name: ClamAV scan (ZIP)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-
           function Resolve-Exe([string]$name) {
             $cmd = Get-Command $name -ErrorAction SilentlyContinue
             if ($cmd -and $cmd.Source) { return $cmd.Source }
             throw "$name introuvable dans le PATH"
           }
-
           $clamscan = Resolve-Exe "clamscan.exe"
           $db = Join-Path $env:RUNNER_TEMP "clamdb"
 
