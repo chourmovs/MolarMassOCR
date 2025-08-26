@@ -195,8 +195,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           choco install clamav -y --no-progress
 
-      - name: Update ClamAV virus database (freshclam)
-        shell: pwsh
+            - name: Update ClamAV virus database (freshclam)
+      - shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -208,19 +208,40 @@ jobs:
 
           $freshclam = Resolve-Exe "freshclam.exe"
 
-          # Dossier DB local (évite d'écrire sous Program Files / ProgramData)
+          # Dossier DB local (évite Program Files/ProgramData)
           $db = Join-Path $env:RUNNER_TEMP "clamdb"
           New-Item -ItemType Directory -Force -Path $db | Out-Null
 
-          # Mise à jour des signatures
-          & "$freshclam" --datadir="$db"
+          # Conf minimale temporaire pour freshclam
+          $conf = Join-Path $env:RUNNER_TEMP "freshclam.conf"
+          $log  = Join-Path $env:RUNNER_TEMP "freshclam.log"
+          @"
+          DatabaseMirror database.clamav.net
+          DatabaseDirectory $db
+          UpdateLogFile $log
+          LogTime yes
+          MaxAttempts 3
+          "@ | Set-Content -Encoding ASCII $conf
+
+          # Mise à jour des signatures avec conf explicite
+          & "$freshclam" --config-file="$conf" --datadir="$db" --verbose
           $code = $LASTEXITCODE
-          # 0 = ok, 1 = déjà à jour (ou warning benignes selon miroir), >1 = erreurs
-          if ($code -gt 1) {
-            throw "freshclam a échoué avec code $code"
+
+          # 0 = OK ; 1 = parfois "déjà à jour"/warnings selon miroirs ; >1 = erreurs
+          if ($code -eq 0) {
+            Write-Host "freshclam terminé (exit 0)."
+          } elseif ($code -eq 1) {
+            if (Test-Path $log -and (Select-String -Path $log -Pattern 'is up to date' -Quiet)) {
+              Write-Host "freshclam: DB déjà à jour (exit 1 toléré)."
+            } else {
+              Get-Content -Path $log -ErrorAction SilentlyContinue | Write-Host
+              throw "freshclam a retourné 1 sans message 'up to date'."
+            }
           } else {
-            Write-Host "freshclam terminé (exit $code)."
+            Get-Content -Path $log -ErrorAction SilentlyContinue | Write-Host
+            throw "freshclam a échoué avec code $code"
           }
+
 
       - name: ClamAV scan (ZIP)
         shell: pwsh
