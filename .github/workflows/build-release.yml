@@ -218,5 +218,3 @@ jobs:
           files: molar_mass_portable_winpython.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
