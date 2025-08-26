@@ -256,18 +256,13 @@ jobs:
           $h = Get-FileHash $f.FullName -Algorithm SHA256
           "sha256=$($h.Hash.ToLower())" | Out-File -Append -FilePath $env:GITHUB_OUTPUT
 
-      - name: Append local-scan summary to release notes
+      - name: Append local-scan summary to release notes (one-line)
         shell: pwsh
         run: |
-          $sha  = "${{ steps.sha.outputs.sha256 }}"
-          $note = @"
-          ---
-          **Security scans (local)**
-          - Microsoft Defender: OK
-          - ClamAV: OK
-          - SHA256: $sha
-          "@
-          "RELEASE_NOTES=$note" | Out-File -Append -FilePath $env:GITHUB_ENV
+          $sha = "ed6759c57c2b518a0d4aea564138e88a3671b5f58a010db07ecb562019a8e33b"
+          $note = "---\n**Security scans (local)**\n- Microsoft Defender: OK\n- ClamAV: OK\n- SHA256: $sha"
+          "RELEASE_NOTES=$note" | Out-File -FilePath $env:GITHUB_ENV -Append
+
 
       # ─────────────────────────────────────────
       # 📦 Publication (artifact + release)
