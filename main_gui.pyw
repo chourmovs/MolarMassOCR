@@ -4,12 +4,18 @@ import time
 import sys
 import re
 
-### SPLASHSCREEN CENTRÉ ###
+# =========================
+# ====== CONFIG APP =======
+# =========================
+APP_NAME = "Reconnaissance de masse molaire OCSR"
+CURRENT_VERSION = "1.0.7"  # <-- Mets à jour ton numéro de version ici
+GITHUB_REPO = "chourmovs/MolarMassOCR"  # owner/repo
+
+# =============== SPLASHSCREEN ===============
 class SplashScreen(tk.Toplevel):
     def __init__(self, parent, steps=7):
         super().__init__(parent)
         self.overrideredirect(True)
-        # Centrage dynamique
         w, h = 370, 140
         self.update_idletasks()
         screen_w = self.winfo_screenwidth()
@@ -50,7 +56,7 @@ def load_heavy_libs(splash):
     from PIL import Image, ImageTk, ImageGrab, ImageEnhance, ImageFilter; splash.set_progress(7)
     splash.set_message("Prêt !")
 
-### REDIRECTION CONSOLE ###
+# ============== REDIRECTION CONSOLE ==============
 class ConsoleRedirector:
     def __init__(self, text_widget):
         self.text_widget = text_widget
@@ -61,11 +67,71 @@ class ConsoleRedirector:
         self.text_widget.configure(state='disabled')
     def flush(self): pass
 
-### APPLICATION PRINCIPALE ###
+# ============== POPUP D'ATTENTE (SABLIER) ==============
+class BusyPopup(tk.Toplevel):
+    """
+    Popup modal léger avec progressbar indéterminée + messages verbeux.
+    Utiliser show(msg) / update_message(msg) / close().
+    """
+    def __init__(self, parent, title="Veuillez patienter…"):
+        super().__init__(parent)
+        self.parent = parent
+        self.title(title)
+        self.configure(bg="#31436a")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+        # Position centré parent
+        self.update_idletasks()
+        w, h = 420, 160
+        px = parent.winfo_rootx() + parent.winfo_width()//2 - w//2
+        py = parent.winfo_rooty() + parent.winfo_height()//2 - h//2
+        self.geometry(f"{w}x{h}+{px}+{py}")
+
+        # UI
+        frm = tk.Frame(self, bg="#31436a")
+        frm.pack(expand=True, fill="both", padx=14, pady=14)
+
+        self.lbl_title = tk.Label(frm, text=title, font=("Segoe UI", 12, "bold"), bg="#31436a", fg="#fff")
+        self.lbl_title.pack(anchor="w", pady=(2, 6))
+
+        self.txt = tk.Text(frm, height=4, bg="#20304f", fg="#e0e6ef",
+                           insertbackground="#fff", bd=0, highlightthickness=0, wrap="word")
+        self.txt.pack(fill="both", expand=True, pady=(0, 10))
+        self.txt.configure(state="disabled")
+
+        self.pb = ttk.Progressbar(frm, mode="indeterminate", length=360)
+        self.pb.pack(fill="x")
+        self.pb.start(70)
+
+        # empêcher fermeture (optionnel)
+        self.protocol("WM_DELETE_WINDOW", lambda: None)
+
+    def show(self, message: str):
+        self.update_message(message)
+        self.deiconify()
+        self.update()
+
+    def update_message(self, message: str):
+        self.txt.configure(state="normal")
+        self.txt.insert("end", message.strip() + "\n")
+        self.txt.see("end")
+        self.txt.configure(state="disabled")
+        self.update_idletasks()
+
+    def close(self):
+        try:
+            self.pb.stop()
+        except Exception:
+            pass
+        self.grab_release()
+        self.destroy()
+
+# ============== APPLICATION PRINCIPALE ==============
 class App:
     def __init__(self, root):
         # Imports dynamiques
-        import os, requests, tempfile
+        import os, requests, tempfile, threading, webbrowser, queue
         import numpy as np
         from rdkit import Chem
         from rdkit.Chem import rdMolDescriptors, Draw, Descriptors
@@ -76,6 +142,9 @@ class App:
 
         self.os = os
         self.requests = requests
+        self.threading = threading
+        self.webbrowser = webbrowser
+        self.queue = queue
         self.np = np
         self.Chem = Chem
         self.rdMolDescriptors = rdMolDescriptors
@@ -93,18 +162,21 @@ class App:
         self.tkfont = tkfont
         self.tempfile = tempfile
 
-        self.client = grc.Client("https://chouchouvs-distance-smiles.hf.space/")
+        # Client Gradio distant
+        self.hf_space_url = "https://chouchouvs-distance-smiles.hf.space/"
+        self.client = grc.Client(self.hf_space_url)
 
+        # poids atomiques
         self.atomic_weights = {
             "H": 1.008, "C": 12.011, "N": 14.007, "O": 15.999,
             "S": 32.06, "P": 30.974, "F": 18.998, "Cl": 35.45,
             "Br": 79.904, "I": 126.90,
         }
 
-        # --- Interface graphique Tkinter ---
+        # --- UI Tkinter ---
         self.root = root
-        self.root.title("Reconnaissance de masse molaire OCSR")
-        self.root.geometry("950x650")
+        self.root.title(f"{APP_NAME} — v{CURRENT_VERSION}")
+        self.root.geometry("1000x650")
         self.root.minsize(1000, 600)
         self.bg_main = "#f5f8fc"
         self.color_accent = "#4F8EF7"
@@ -115,6 +187,9 @@ class App:
         self.font_btn = tkfont.Font(family="Segoe UI", size=12, weight="bold")
         self.font_result = tkfont.Font(family="Consolas", size=11)
         self.font_console = tkfont.Font(family="Consolas", size=10)
+
+        # Menu
+        self._build_menu()
 
         self.zoom_factor = 1.0
         self.min_zoom = 0.2
@@ -129,7 +204,7 @@ class App:
         # Header
         header = tk.Frame(root, bg=self.color_accent, height=54)
         header.pack(fill="x", side="top")
-        lbl_title = tk.Label(header, text="Reconnaissance de masse molaire OCSR", bg=self.color_accent, fg="#fff",
+        lbl_title = tk.Label(header, text=APP_NAME, bg=self.color_accent, fg="#fff",
                              font=self.font_title, padx=22, pady=11)
         lbl_title.pack(side="left", anchor="w")
 
@@ -164,7 +239,7 @@ class App:
         self.btn_reset_zoom = tk.Button(
             self.btn_overlay, text="⟳", command=self.reset_zoom, **btn_style
         )
-        self.btn_reset_zoom.pack(side="right", padx=(0,0))
+        self.btn_reset_zoom.pack(side="right", padx=0)
 
         self.canvas_img = tk.Canvas(self.image_container, bg=self.bg_card, bd=2, relief="groove", highlightthickness=0)
         self.canvas_img.pack(pady=(25,10), padx=5, fill="both", expand=True)
@@ -236,9 +311,37 @@ class App:
         self.text_console.pack(fill="both", expand=True)
         sys.stdout = ConsoleRedirector(self.text_console)
         sys.stderr = ConsoleRedirector(self.text_console)
-        self.log_console("Console initialisée : prêt à analyser vos images.")
-        
-    # --- UTILITAIRES APP ---
+        self.log_console(f"Console initialisée. Version: {CURRENT_VERSION}")
+
+        # Vérification de mise à jour au démarrage (non bloquant)
+        self.root.after(800, self._auto_check_update)
+
+    # ---------- MENU ----------
+    def _build_menu(self):
+        m = tk.Menu(self.root)
+        self.root.config(menu=m)
+
+        menu_file = tk.Menu(m, tearoff=0)
+        menu_file.add_command(label="Quitter", command=self.root.quit)
+        m.add_cascade(label="Fichier", menu=menu_file)
+
+        menu_help = tk.Menu(m, tearoff=0)
+        menu_help.add_command(label="Rechercher des mises à jour…", command=self.check_updates_interactive)
+        menu_help.add_command(label="Ouvrir la page GitHub", command=lambda: self._open_url(f"https://github.com/{GITHUB_REPO}"))
+        menu_help.add_separator()
+        menu_help.add_command(label="À propos", command=self._about)
+        m.add_cascade(label="Aide", menu=menu_help)
+
+    def _about(self):
+        from tkinter import messagebox
+        messagebox.showinfo("À propos", f"{APP_NAME}\nVersion {CURRENT_VERSION}\n\nRepo: {GITHUB_REPO}")
+
+    def _open_url(self, url: str):
+        try:
+            self.webbrowser.open(url)
+        except Exception as e:
+            self.messagebox.showerror("Erreur", f"Impossible d'ouvrir le navigateur:\n{e}")
+
     def log_console(self, message):
         self.text_console.config(state='normal')
         self.text_console.insert('end', message + "\n")
@@ -261,26 +364,31 @@ class App:
         x = c_width // 2 - w_z // 2 + self.pan_x
         y = c_height // 2 - h_z // 2 + self.pan_y
         self.canvas_img.create_image(x, y, anchor="nw", image=self.img_tk)
+
     def on_mousewheel_zoom(self, event):
         if event.delta > 0:
             self.zoom_factor = min(self.zoom_factor * 1.13, self.max_zoom)
         else:
             self.zoom_factor = max(self.zoom_factor / 1.13, self.min_zoom)
         self.update_panel_img()
+
     def on_mousewheel_zoom_linux(self, event):
         if event.num == 4:
             self.zoom_factor = min(self.zoom_factor * 1.13, self.max_zoom)
         elif event.num == 5:
             self.zoom_factor = max(self.zoom_factor / 1.13, self.min_zoom)
         self.update_panel_img()
+
     def reset_zoom(self):
         self.zoom_factor = 1.0
         self.pan_x = 0
         self.pan_y = 0
         self.update_panel_img()
+
     def start_pan(self, event):
         self.drag_start_x = event.x
         self.drag_start_y = event.y
+
     def do_pan(self, event):
         dx = event.x - self.drag_start_x
         dy = event.y - self.drag_start_y
@@ -289,9 +397,11 @@ class App:
         self.drag_start_x = event.x
         self.drag_start_y = event.y
         self.update_panel_img()
+
     def end_pan(self, event):
         self.drag_start_x = None
         self.drag_start_y = None
+
     def show_full_res(self):
         if self.img_pil_displayed is None:
             return
@@ -305,7 +415,6 @@ class App:
         win.geometry(f"{pil.width}x{pil.height}")
 
     # ----------- LOGIQUE CHIMIE/OCSR ------------
-
     def enhance_image(self, pil_img):
         img = self.ImageEnhance.Contrast(pil_img).enhance(1.3)
         img = self.ImageEnhance.Sharpness(img).enhance(2.0)
@@ -352,7 +461,8 @@ class App:
                 if re.match(r'^\d{2,7}-\d{2}-\d$', regid):
                     return regid
             return None
-        except Exception: return None
+        except Exception:
+            return None
 
     def cas_to_name(self, cas):
         try:
@@ -367,21 +477,56 @@ class App:
             data = r2.json()
             props = data.get("PropertyTable", {}).get("Properties", [{}])[0]
             return props.get("Title") or props.get("IUPACName")
-        except Exception: return None
+        except Exception:
+            return None
 
     def clean_smiles_isotopes(self, smiles):
         return re.sub(r'\[(\d+)([A-Z][a-z]?)\]', r'\2', smiles)
 
-    def predict_smiles_with_gradio(self, pil_img):
+    # --------- Appels HF AVEC SABLIER & RETRIES (thread) ---------
+    def predict_smiles_with_gradio(self, pil_img, verbose_cb=None, max_retries=3):
+        """
+        Lance l'appel Gradio en thread et bloque jusqu'au résultat mais
+        permet d'envoyer des messages via verbose_cb (GUI non gelée grâce au popup).
+        """
+        # Sauvegarde image dans un fichier temp
         with self.tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             pil_img.save(tmp, format="PNG")
             tmp_path = tmp.name
-        result = self.client.predict(
-            img=self.handle_file(tmp_path),
-            api_name="/predict"
-        )
-        return result
 
+        def v(msg):
+            if verbose_cb: verbose_cb(msg)
+            print(msg)
+
+        # Petit ping pour réveiller l'espace (si endormi)
+        try:
+            v("Ping de l'espace HuggingFace…")
+            self.client.view_api(all_endpoints=False)  # appel léger
+        except Exception as e:
+            v(f"Ping non déterminant (continue) : {e}")
+
+        # Tentatives avec backoff progressif
+        last_err = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                v(f"Tentative {attempt}/{max_retries} : envoi de l'image…")
+                res = self.client.predict(
+                    img=self.handle_file(tmp_path),
+                    api_name="/predict"
+                )
+                v("Réponse reçue ✅")
+                return res
+            except Exception as e:
+                last_err = e
+                v(f"Erreur HF : {e}")
+                if attempt < max_retries:
+                    delay = 2 * attempt
+                    v(f"Nouvelle tentative dans {delay}s (l'espace peut être en réveil)…")
+                    time.sleep(delay)
+        # Échec après retries
+        raise RuntimeError(f"Échec d'appel HuggingFace après {max_retries} tentatives : {last_err}")
+
+    # ----- Pipeline de traitement avec BusyPopup -----
     def process_pil_image(self, pil_img):
         results = []
         variants = [
@@ -390,15 +535,45 @@ class App:
         ]
         for suffix, img in variants:
             try:
-                smiles = self.predict_smiles_with_gradio(img)
-                smiles = self.clean_smiles_isotopes(smiles)
+                # Affiche popup sablier et exécute en thread
+                popup = BusyPopup(self.root, title="Analyse en cours…")
+                popup.show(f"Préparation de la variante: {suffix}")
+                # pour ne pas bloquer : on utilise une Queue pour rapatrier résultat/erreur
+                q = self.queue.Queue()
+
+                def worker():
+                    try:
+                        smiles = self.predict_smiles_with_gradio(
+                            img,
+                            verbose_cb=lambda m: self.root.after(0, popup.update_message, m),
+                            max_retries=3
+                        )
+                        q.put(("ok", smiles))
+                    except Exception as e:
+                        q.put(("err", e))
+
+                t = self.threading.Thread(target=worker, daemon=True)
+                t.start()
+
+                # Boucle d'attente non bloquante (garde l'UI vivante)
+                while t.is_alive():
+                    self.root.update()
+                    time.sleep(0.05)
+
+                status, payload = q.get_nowait()
+                popup.close()
+
+                if status == "ok":
+                    smiles = self.clean_smiles_isotopes(payload)
+                else:
+                    print(f"Erreur DECIMER distant ({suffix}) : {payload}")
+                    smiles = ""
             except Exception as e:
-                print(f"Erreur DECIMER distant ({suffix}) : {e}")
+                print(f"Erreur DECIMER ({suffix}) : {e}")
                 smiles = ""
+
             mol = self.Chem.MolFromSmiles(smiles)
-            plausible = (
-                mol and self.is_chemically_plausible(mol) and not self.smiles_has_isotopes(smiles)
-            )
+            plausible = (mol and self.is_chemically_plausible(mol) and not self.smiles_has_isotopes(smiles))
             if mol:
                 formula = self.rdMolDescriptors.CalcMolFormula(mol)
                 mass_exact = self.rdMolDescriptors.CalcExactMolWt(mol)
@@ -427,7 +602,7 @@ class App:
         seen_masses = set()
         eps = 0.01
         variants = []
-        for idx, r in enumerate(results):
+        for r in results:
             if r["mass_exact"] is None or r["smiles"] == "":
                 continue
             already = any(abs(r["mass_exact"] - m) < eps for m in seen_masses)
@@ -439,7 +614,7 @@ class App:
         self.show_current_variant()
 
     def show_current_variant(self):
-        if not self.variants:
+        if not hasattr(self, "variants") or not self.variants:
             self.img_pil_displayed = None
             self.update_panel_img()
             self.text_result.delete(1.0, tk.END)
@@ -466,21 +641,22 @@ class App:
         self.update_nav_buttons()
 
     def update_nav_buttons(self):
-        total = max(1, len(self.variants))
+        total = max(1, len(getattr(self, "variants", [])))
         self.lbl_num.config(text=f"Variante {self.current_variant+1}/{total}")
-        if len(self.variants) > 1:
+        if total > 1:
             self.btn_prev.config(state="normal" if self.current_variant > 0 else "disabled")
-            self.btn_next.config(state="normal" if self.current_variant < len(self.variants)-1 else "disabled")
+            self.btn_next.config(state="normal" if self.current_variant < total-1 else "disabled")
         else:
             self.btn_prev.config(state="disabled")
             self.btn_next.config(state="disabled")
 
     def prev_variant(self):
-        if self.variants and self.current_variant > 0:
+        if getattr(self, "variants", None) and self.current_variant > 0:
             self.current_variant -= 1
             self.show_current_variant()
+
     def next_variant(self):
-        if self.variants and self.current_variant < len(self.variants) - 1:
+        if getattr(self, "variants", None) and self.current_variant < len(self.variants) - 1:
             self.current_variant += 1
             self.show_current_variant()
 
@@ -518,6 +694,7 @@ class App:
         msg += "\n"
         return msg, warning
 
+    # ----------- Actions UI chargement/coller/copie ----------
     def load_image(self):
         file_path = self.filedialog.askopenfilename(filetypes=[
             ("Images", "*.png;*.jpg;*.jpeg;*.bmp;*.gif"),
@@ -526,11 +703,11 @@ class App:
         if not file_path: return
         try:
             pil_img = self.Image.open(file_path).convert("RGB")
-            print(f"Image chargée : {file_path}")
+            print(f"Image chargée : {file_path}")
             self.show_results(pil_img)
         except Exception as e:
             self.messagebox.showerror("Erreur", f"Impossible de lire l'image:\n{e}")
-            print(f"Erreur ouverture image : {e}")
+            print(f"Erreur ouverture image : {e}")
 
     def paste_image(self):
         try:
@@ -558,7 +735,78 @@ class App:
             self.messagebox.showwarning("SMILES", "Aucun SMILES à copier.")
             print("Aucun SMILES à copier.")
 
-### 4. MAIN ###
+    # =======================
+    #   MISES À JOUR GITHUB
+    # =======================
+    def _parse_version(self, s: str):
+        """
+        Parse simple SemVer-like strings: 'v1.2.3' or '1.2.3'
+        Retourne un tuple d'entiers pour comparaison.
+        """
+        s = s.strip().lower()
+        if s.startswith("v"):
+            s = s[1:]
+        parts = re.split(r"[^0-9]+", s)
+        nums = [int(p) for p in parts if p.isdigit()]
+        while len(nums) < 3:
+            nums.append(0)
+        return tuple(nums[:3])
+
+    def _fetch_latest_release(self):
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+        headers = {"User-Agent": f"{APP_NAME}-updater"}
+        r = self.requests.get(url, headers=headers, timeout=8)
+        r.raise_for_status()
+        data = r.json()
+        tag = data.get("tag_name") or data.get("name") or ""
+        html_url = data.get("html_url", f"https://github.com/{GITHUB_REPO}/releases")
+        return tag, html_url
+
+    def check_updates_interactive(self):
+        try:
+            tag, page = self._fetch_latest_release()
+            v_remote = self._parse_version(tag)
+            v_local = self._parse_version(CURRENT_VERSION)
+            if v_remote > v_local:
+                if self.messagebox.askyesno(
+                    "Mise à jour disponible",
+                    f"Nouvelle version détectée : {tag}\n\nVersion actuelle : {CURRENT_VERSION}\n\n"
+                    f"Voulez-vous ouvrir la page des releases ?"
+                ):
+                    self._open_url(page)
+            else:
+                self.messagebox.showinfo("À jour", f"Aucune mise à jour disponible.\nVersion actuelle : {CURRENT_VERSION}")
+        except Exception as e:
+            self.messagebox.showwarning("Vérification échouée", f"Impossible de vérifier les mises à jour:\n{e}")
+
+    def _auto_check_update(self):
+        def worker():
+            try:
+                tag, page = self._fetch_latest_release()
+                v_remote = self._parse_version(tag)
+                v_local = self._parse_version(CURRENT_VERSION)
+                if v_remote > v_local:
+                    self.root.after(0, lambda: self._prompt_update(tag, page))
+            except Exception as e:
+                # silencieux au démarrage ; log console
+                self.log_console(f"[MAJ] Vérification silencieuse échouée : {e}")
+
+        t = self.threading.Thread(target=worker, daemon=True)
+        t.start()
+
+    def _prompt_update(self, tag: str, page: str):
+        try:
+            if self.messagebox.askyesno(
+                "Mise à jour disponible",
+                f"Une nouvelle version est disponible : {tag}\n"
+                f"Version actuelle : {CURRENT_VERSION}\n\n"
+                "Ouvrir la page GitHub pour télécharger ?"
+            ):
+                self._open_url(page)
+        except Exception as e:
+            self.log_console(f"[MAJ] Prompt update error: {e}")
+
+# ================= MAIN =================
 if __name__ == "__main__":
     root = tk.Tk()
     root.withdraw()
