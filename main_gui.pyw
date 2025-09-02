@@ -8,7 +8,7 @@ import re
 # ====== CONFIG APP =======
 # =========================
 APP_NAME = "Reconnaissance de masse molaire OCSR"
-CURRENT_VERSION = "1.0.7"  # <-- Mets à jour ton numéro de version ici
+CURRENT_VERSION = "1.08"  # <-- Mets à jour ton numéro de version ici
 GITHUB_REPO = "chourmovs/MolarMassOCR"  # owner/repo
 
 # =============== SPLASHSCREEN ===============
@@ -821,3 +821,4 @@ if __name__ == "__main__":
 
     root.after_idle(show_main_and_kill_splash)
     root.mainloop()
+
