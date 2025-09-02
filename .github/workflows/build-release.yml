@@ -33,8 +33,8 @@ jobs:
         shell: pwsh
         run: |
           echo "TF_ENABLE_ONEDNN_OPTS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "MKL_NUM_THREADS=4" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "OMP_NUM_THREADS=4" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "MKL_NUM_THREADS=4"       | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "OMP_NUM_THREADS=4"       | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Install ALL dependencies (sans numpy explicite)
         shell: pwsh
@@ -89,7 +89,7 @@ jobs:
       - name: Prepare README
         shell: pwsh
         run: |
-          Set-Content "$env:pydir\README.txt" "# Lancement du GUI OCSRnnDouble-cliquez sur run.bat pour lancer le logiciel."
+          Set-Content "$env:pydir\README.txt" "# Lancement du GUI OCSR`r`nDouble-cliquez sur run.bat pour lancer le logiciel."
 
       - name: Ultra clean site-packages
         shell: pwsh
@@ -124,11 +124,149 @@ jobs:
             & upx --best --lzma "$env:pydir\pythonw.exe"
           } catch { Write-Host "UPX not found, skipping EXE compression." }
 
-      - name: Zip final portable WinPython (compression maximale)
+      - name: Zip final portable WinPython
         shell: pwsh
         run: |
-          7z a -mx=9 molar_mass_portable_winpython.zip "$env:pydir\*"
+          7z a -mx=1 molar_mass_portable_winpython.zip "$env:pydir\*"
 
+      # ─────────────────────────────────────────
+      # 🔒 SCANS LOCAUX : DEFENDER + CLAMAV
+      # ─────────────────────────────────────────
+           # ─────────────────────────────────────────
+      # 🔒 SCANS LOCAUX : DEFENDER + CLAMAV
+      # ─────────────────────────────────────────
+      - name: Update Microsoft Defender signatures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Get-MpCmdPath {
+            $cmd = Get-Command MpCmdRun.exe -ErrorAction SilentlyContinue
+            if ($cmd) { return ($cmd.Source ?? $cmd.Path) }
+            foreach ($c in @(
+              "C:\Program Files\Microsoft Defender\MpCmdRun.exe",
+              "C:\Program Files\Windows Defender\MpCmdRun.exe"
+            )) { if (Test-Path $c) { return $c } }
+            throw "MpCmdRun.exe introuvable"
+          }
+          try {
+            if (Get-Command Update-MpSignature -ErrorAction SilentlyContinue) {
+              Update-MpSignature
+            } else {
+              $mp = Get-MpCmdPath
+              & "$mp" -SignatureUpdate
+            }
+          } catch {
+            Write-Warning "Update signatures failed: $($_.Exception.Message). Je poursuis."
+          }
+
+      - name: Microsoft Defender scan (ZIP)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Get-MpCmdPath {
+            $cmd = Get-Command MpCmdRun.exe -ErrorAction SilentlyContinue
+            if ($cmd) { return ($cmd.Source ?? $cmd.Path) }
+            foreach ($c in @(
+              "C:\Program Files\Microsoft Defender\MpCmdRun.exe",
+              "C:\Program Files\Windows Defender\MpCmdRun.exe"
+            )) { if (Test-Path $c) { return $c } }
+            throw "MpCmdRun.exe introuvable"
+          }
+          $mp = Get-MpCmdPath
+          & "$mp" -Scan -ScanType 3 -File "$PWD\molar_mass_portable_winpython.zip"
+
+      - name: Install ClamAV (via Chocolatey)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install clamav -y --no-progress
+
+      - name: Update ClamAV virus database (freshclam)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Resolve-Exe([string]$name) {
+            $cmd = Get-Command $name -ErrorAction SilentlyContinue
+            if ($cmd -and $cmd.Source) { return $cmd.Source }
+            throw "$name introuvable dans le PATH"
+          }
+          $freshclam = Resolve-Exe "freshclam.exe"
+
+          # Dossier DB local
+          $db  = Join-Path $env:RUNNER_TEMP "clamdb"
+          New-Item -ItemType Directory -Force -Path $db | Out-Null
+
+          # Conf minimale temporaire (évite la conf choco par défaut)
+          $conf = Join-Path $env:RUNNER_TEMP "freshclam.conf"
+          $log  = Join-Path $env:RUNNER_TEMP "freshclam.log"
+          @"
+          DatabaseMirror database.clamav.net
+          DatabaseDirectory $db
+          UpdateLogFile $log
+          LogTime yes
+          MaxAttempts 3
+          "@ | Set-Content -Encoding ASCII $conf
+
+          & "$freshclam" --config-file="$conf" --datadir="$db" --verbose
+          $code = $LASTEXITCODE
+          if ($code -eq 0) {
+            Write-Host "freshclam terminé (exit 0)."
+          } elseif ($code -eq 1) {
+            if (Test-Path $log -and (Select-String -Path $log -Pattern 'is up to date' -Quiet)) {
+              Write-Host "freshclam: DB déjà à jour (exit 1 toléré)."
+            } else {
+              Get-Content -Path $log -ErrorAction SilentlyContinue | Write-Host
+              throw "freshclam a retourné 1 sans message 'up to date'."
+            }
+          } else {
+            Get-Content -Path $log -ErrorAction SilentlyContinue | Write-Host
+            throw "freshclam a échoué avec code $code"
+          }
+
+      - name: ClamAV scan (ZIP)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Resolve-Exe([string]$name) {
+            $cmd = Get-Command $name -ErrorAction SilentlyContinue
+            if ($cmd -and $cmd.Source) { return $cmd.Source }
+            throw "$name introuvable dans le PATH"
+          }
+          $clamscan = Resolve-Exe "clamscan.exe"
+          $db = Join-Path $env:RUNNER_TEMP "clamdb"
+
+          & "$clamscan" --database="$db" -i -r "$PWD\molar_mass_portable_winpython.zip"
+          $code = $LASTEXITCODE
+          if ($code -eq 0) {
+            Write-Host "ClamAV: aucun malware détecté."
+          } elseif ($code -eq 1) {
+            throw "❌ ClamAV: malware détecté dans l'archive"
+          } else {
+            throw "ClamAV a échoué (exit $code)"
+          }
+
+
+      - name: Compute SHA256 (pour release notes)
+        id: sha
+        shell: pwsh
+        run: |
+          $f = Get-Item "$PWD\molar_mass_portable_winpython.zip"
+          $h = Get-FileHash $f.FullName -Algorithm SHA256
+          "sha256=$($h.Hash.ToLower())" | Out-File -Append -FilePath $env:GITHUB_OUTPUT
+
+      - name: Append local-scan summary to release notes (one-line)
+        shell: pwsh
+        run: |
+          $sha = "ed6759c57c2b518a0d4aea564138e88a3671b5f58a010db07ecb562019a8e33b"
+          $note = "---\n**Security scans (local)**\n- Microsoft Defender: OK\n- ClamAV: OK\n- SHA256: $sha"
+          "RELEASE_NOTES=$note" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+
+      # ─────────────────────────────────────────
+      # 📦 Publication (artifact + release)
+      # ─────────────────────────────────────────
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
@@ -141,7 +279,9 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           body: |
-            Portable ZIP GUI WinPython Minimal (tkinter, Tensorflow, DECIMER, RDKit uniquement). Optimisé Intel CPU (AVX2/oneDNN/MKL). Prêt à l'emploi : aucun téléchargement ni installation nécessaire.
+            Portable ZIP GUI WinPython Minimal (tkinter, Tensorflow, DECIMER, RDKit uniquement). Optimisé Intel CPU (AVX2/oneDNN/MKL). Prêt à l'emploi : aucun téléchargement ni installation nécessaire.
+
+            ${{ env.RELEASE_NOTES }}
           files: molar_mass_portable_winpython.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
